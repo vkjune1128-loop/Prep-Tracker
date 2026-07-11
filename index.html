@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Interview Prep Tracker</title>
+<meta name="theme-color" content="#0B0E14" />
+<meta name="description" content="Java backend interview prep tracker — DSA, System Design, Spring Boot, Kafka, Docker, K8s" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Prep Tracker" />
+<link rel="icon" href="icon-192.png" />
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #0B0E14; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  // localStorage-backed shim matching the storage interface the component expects
+  window.storage = {
+    async get(key) {
+      const v = localStorage.getItem(key);
+      if (v === null) return null;
+      return { key, value: v, shared: false };
+    },
+    async set(key, value) {
+      localStorage.setItem(key, value);
+      return { key, value, shared: false };
+    },
+    async delete(key) {
+      localStorage.removeItem(key);
+      return { key, deleted: true, shared: false };
+    },
+    async list(prefix) {
+      const keys = Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix));
+      return { keys, prefix, shared: false };
+    }
+  };
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js').catch(() => {});
+    });
+  }
+</script>
+<script type="text/babel" data-presets="react">
+  const { useState, useEffect, useCallback } = React;
+
+const TOPICS = [
+  {
+    id: 'java',
+    label: 'Java Core & Advanced',
+    accent: '#E8A33D',
+    items: [
+      'Collections internals (HashMap resizing, ConcurrentHashMap)',
+      'Concurrency: Executors, Locks, volatile, CompletableFuture',
+      'JVM memory model & GC basics (G1)',
+      'Java 8+ streams, functional interfaces, Optional',
+      'Live-code a concurrency problem end to end',
+    ],
+  },
+  {
+    id: 'spring',
+    label: 'Spring Boot',
+    accent: '#6DBE8C',
+    items: [
+      'IoC / DI, bean lifecycle, injection types',
+      'MVC request flow & @ControllerAdvice',
+      'JPA: N+1, lazy vs eager, @Transactional propagation',
+      'JWT / OAuth2 basics',
+      'Explain a request end-to-end through your app',
+    ],
+  },
+  {
+    id: 'kafka',
+    label: 'Kafka',
+    accent: '#A78BFA',
+    items: [
+      'Producer / consumer basics, partitions',
+      'Consumer groups & offset management',
+      'At-least-once vs exactly-once, idempotency',
+      'Kafka vs RabbitMQ/SQS — when to use which',
+      'Rebalancing basics',
+    ],
+  },
+  {
+    id: 'docker',
+    label: 'Docker',
+    accent: '#4FA8E0',
+    items: [
+      'Image vs container, Dockerfile basics',
+      'Multi-stage builds',
+      'Volumes & bridge networking',
+      'Dockerize a Spring Boot app yourself',
+    ],
+  },
+  {
+    id: 'k8s',
+    label: 'Kubernetes',
+    accent: '#45C4B0',
+    items: [
+      'Pods, deployments, services',
+      'ConfigMaps & Secrets',
+      'Rolling updates & scaling basics',
+    ],
+  },
+  {
+    id: 'sysdesign',
+    label: 'System Design',
+    accent: '#4DD0E1',
+    items: [
+      'LLD: design patterns + OOP in a mock class design',
+      'HLD: load balancing, caching, sharding, CAP',
+      'Design a URL shortener',
+      'Design a rate limiter',
+      'Design a notification system',
+    ],
+  },
+];
+
+const DSA_PATTERNS = [
+  'Arrays & Hashing', 'Two Pointers', 'Sliding Window', 'Stack',
+  'Binary Search', 'Trees', 'Graphs (BFS/DFS)', 'Backtracking', 'DP (basic)',
+];
+
+const DSA_QUESTIONS = [
+  {
+    pattern: 'Arrays & Hashing',
+    questions: [
+      'Two Sum', 'Contains Duplicate', 'Valid Anagram', 'Group Anagrams',
+      'Top K Frequent Elements', 'Product of Array Except Self', 'Valid Sudoku',
+      'Longest Consecutive Sequence', 'Encode and Decode Strings',
+      'Subarray Sum Equals K', 'Majority Element', 'Merge Intervals',
+      'Insert Interval', 'Non-overlapping Intervals', 'Set Matrix Zeroes',
+    ],
+  },
+  {
+    pattern: 'Two Pointers',
+    questions: [
+      'Valid Palindrome', 'Two Sum II (sorted)', '3Sum',
+      'Container With Most Water', 'Trapping Rain Water', 'Sort Colors',
+      'Remove Duplicates from Sorted Array', 'Move Zeroes', '4Sum',
+      'Backspace String Compare',
+    ],
+  },
+  {
+    pattern: 'Sliding Window',
+    questions: [
+      'Best Time to Buy/Sell Stock', 'Longest Substring Without Repeating Characters',
+      'Longest Repeating Character Replacement', 'Permutation in String',
+      'Minimum Window Substring', 'Sliding Window Maximum', 'Fruit Into Baskets',
+      'Max Consecutive Ones III', 'Longest Substring with K Distinct Characters',
+      'Find All Anagrams in a String', 'Maximum Sum Subarray of Size K',
+      'Minimum Size Subarray Sum',
+    ],
+  },
+  {
+    pattern: 'Stack',
+    questions: [
+      'Valid Parentheses', 'Min Stack', 'Evaluate Reverse Polish Notation',
+      'Generate Parentheses', 'Daily Temperatures', 'Car Fleet',
+      'Largest Rectangle in Histogram', 'Next Greater Element',
+      'Asteroid Collision', 'Decode String',
+    ],
+  },
+  {
+    pattern: 'Binary Search',
+    questions: [
+      'Binary Search (basic)', 'Search in Rotated Sorted Array',
+      'Find Minimum in Rotated Sorted Array', 'Search a 2D Matrix',
+      'Koko Eating Bananas', 'Time Based Key-Value Store',
+      'Median of Two Sorted Arrays', 'Find Peak Element',
+      'Capacity to Ship Packages', 'Split Array Largest Sum',
+    ],
+  },
+  {
+    pattern: 'Trees',
+    questions: [
+      'Invert Binary Tree', 'Maximum Depth of Binary Tree', 'Diameter of Binary Tree',
+      'Balanced Binary Tree', 'Same Tree', 'Subtree of Another Tree',
+      'Lowest Common Ancestor of BST', 'Binary Tree Level Order Traversal',
+      'Binary Tree Right Side View', 'Count Good Nodes in Binary Tree',
+      'Validate BST', 'Kth Smallest Element in BST',
+      'Construct Binary Tree from Preorder/Inorder', 'Binary Tree Maximum Path Sum',
+      'Serialize/Deserialize Binary Tree', 'Trie implementation',
+      'Word Search II', 'Add and Search Word',
+    ],
+  },
+  {
+    pattern: 'Graphs (BFS/DFS)',
+    questions: [
+      'Number of Islands', 'Clone Graph', 'Max Area of Island',
+      'Pacific Atlantic Water Flow', 'Surrounded Regions', 'Rotting Oranges',
+      'Walls and Gates', 'Course Schedule', 'Course Schedule II',
+      'Redundant Connection', 'Number of Connected Components',
+      'Graph Valid Tree', 'Word Ladder', 'Alien Dictionary',
+      'Network Delay Time (Dijkstra basics)',
+    ],
+  },
+  {
+    pattern: 'Backtracking',
+    questions: [
+      'Subsets', 'Combination Sum', 'Permutations', 'Subsets II',
+      'Combination Sum II', 'Word Search', 'Palindrome Partitioning',
+      'Letter Combinations of a Phone Number', 'N-Queens (idea only)',
+      'Sudoku Solver (conceptual)',
+    ],
+  },
+  {
+    pattern: 'DP (basic)',
+    questions: [
+      'Climbing Stairs', 'House Robber', 'House Robber II',
+      'Longest Palindromic Substring', 'Palindromic Substrings', 'Decode Ways',
+      'Coin Change', 'Maximum Product Subarray', 'Word Break',
+      'Longest Increasing Subsequence', 'Partition Equal Subset Sum',
+      'Unique Paths', 'Longest Common Subsequence',
+      'Best Time to Buy/Sell Stock with Cooldown', 'Target Sum',
+      'Interleaving String', 'Edit Distance', "Maximum Subarray (Kadane's)",
+      'Jump Game', '0/1 Knapsack (conceptual)',
+    ],
+  },
+];
+
+const ALGO_CHECKLIST = [
+  { pattern: 'Arrays & Hashing', techniques: ['Hashmap frequency-count pattern', 'Prefix sum technique', 'Sort-based dedup / two-pointer variant'] },
+  { pattern: 'Two Pointers', techniques: ['Opposite-end pointers on sorted array', 'Fast/slow pointer', 'Two-pointer merge technique'] },
+  { pattern: 'Sliding Window', techniques: ['Fixed-size window template', 'Variable-size window (expand/shrink)', 'Window state via hashmap/count array'] },
+  { pattern: 'Stack', techniques: ['Monotonic stack (next greater/smaller)', 'Stack for matching/parsing', 'Stack-based simulation'] },
+  { pattern: 'Binary Search', techniques: ['Classic binary search template', 'Binary search on answer space', 'Rotated array / 2D matrix variants'] },
+  { pattern: 'Trees', techniques: ['Recursive DFS (pre/in/post order)', 'Iterative BFS with queue', 'Tree construction from traversal'] },
+  { pattern: 'Graphs (BFS/DFS)', techniques: ['Grid BFS/DFS traversal', "Topological sort (Kahn's / DFS)", 'Union-Find basics'] },
+  { pattern: 'Backtracking', techniques: ['Choose-explore-unchoose template', 'Pruning strategies', 'Visited-state tracking'] },
+  { pattern: 'DP (basic)', techniques: ['1D DP table + base cases', '2D DP table (grid/two strings)', 'Space-optimized rolling array'] },
+];
+
+const STORAGE_KEY = 'interview-prep-tracker-v1';
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function loadDefault() {
+  const checklist = {};
+  TOPICS.forEach(t => { checklist[t.id] = t.items.map(() => false); });
+  const dsa = DSA_PATTERNS.map(p => ({ pattern: p, done: 0, target: 15 }));
+  const dsaQuestions = {};
+  DSA_QUESTIONS.forEach(g => { dsaQuestions[g.pattern] = g.questions.map(() => false); });
+  const algoChecklist = {};
+  ALGO_CHECKLIST.forEach(g => { algoChecklist[g.pattern] = g.techniques.map(() => false); });
+  const dailyPlan = { day: 1, streak: 0, lastCompletedDate: null };
+  return { checklist, dsa, dsaQuestions, algoChecklist, dailyPlan, notes: '' };
+}
+
+function getDailyTarget(day) {
+  if (day <= 7) return 2;
+  if (day <= 14) return 3;
+  if (day <= 21) return 4;
+  return 5;
+}
+
+function getPatternForDay(day) {
+  const idx = (day - 1) % DSA_QUESTIONS.length;
+  return DSA_QUESTIONS[idx];
+}
+
+function PrepTracker() {
+  const [data, setData] = useState(loadDefault());
+  const [loaded, setLoaded] = useState(false);
+  const [activeTab, setActiveTab] = useState('daily');
+  const [saveState, setSaveState] = useState('idle');
+  const [collapsed, setCollapsed] = useState({});
+  const [dsaFilterPattern, setDsaFilterPattern] = useState('all');
+  const [hideCompleted, setHideCompleted] = useState(false);
+
+  const toggleCollapsed = (pattern) => {
+    setCollapsed(prev => ({ ...prev, [pattern]: !prev[pattern] }));
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await window.storage.get(STORAGE_KEY);
+        if (res && res.value) {
+          const saved = JSON.parse(res.value);
+          const def = loadDefault();
+          setData({
+            checklist: { ...def.checklist, ...saved.checklist },
+            dsa: saved.dsa || def.dsa,
+            dsaQuestions: { ...def.dsaQuestions, ...saved.dsaQuestions },
+            algoChecklist: { ...def.algoChecklist, ...(saved.algoChecklist || {}) },
+            dailyPlan: { ...def.dailyPlan, ...(saved.dailyPlan || {}) },
+            notes: saved.notes || '',
+          });
+        }
+      } catch (e) {
+        // no existing data
+      } finally {
+        setLoaded(true);
+      }
+    })();
+  }, []);
+
+  const persist = useCallback(async (next) => {
+    setSaveState('saving');
+    try {
+      await window.storage.set(STORAGE_KEY, JSON.stringify(next));
+      setSaveState('saved');
+      setTimeout(() => setSaveState('idle'), 1200);
+    } catch (e) {
+      setSaveState('error');
+    }
+  }, []);
+
+  const toggleItem = (topicId, idx) => {
+    setData(prev => {
+      const next = { ...prev, checklist: { ...prev.checklist } };
+      next.checklist[topicId] = [...prev.checklist[topicId]];
+      next.checklist[topicId][idx] = !next.checklist[topicId][idx];
+      persist(next);
+      return next;
+    });
+  };
+
+  const toggleDsaQuestion = (pattern, idx) => {
+    setData(prev => {
+      const next = { ...prev, dsaQuestions: { ...prev.dsaQuestions } };
+      next.dsaQuestions[pattern] = [...prev.dsaQuestions[pattern]];
+      next.dsaQuestions[pattern][idx] = !next.dsaQuestions[pattern][idx];
+      persist(next);
+      return next;
+    });
+  };
+
+  const toggleAlgo = (pattern, idx) => {
+    setData(prev => {
+      const next = { ...prev, algoChecklist: { ...prev.algoChecklist } };
+      next.algoChecklist[pattern] = [...prev.algoChecklist[pattern]];
+      next.algoChecklist[pattern][idx] = !next.algoChecklist[pattern][idx];
+      persist(next);
+      return next;
+    });
+  };
+
+  const markDayDone = () => {
+    setData(prev => {
+      const today = todayStr();
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const { lastCompletedDate, streak, day } = prev.dailyPlan;
+      let newStreak = 1;
+      if (lastCompletedDate === yesterday) newStreak = streak + 1;
+      else if (lastCompletedDate === today) newStreak = streak;
+      const next = {
+        ...prev,
+        dailyPlan: {
+          day: lastCompletedDate === today ? day : day + 1,
+          streak: newStreak,
+          lastCompletedDate: today,
+        },
+      };
+      persist(next);
+      return next;
+    });
+  };
+
+  const bumpDsa = (idx, delta) => {
+    setData(prev => {
+      const next = { ...prev, dsa: prev.dsa.map((d, i) => i === idx
+        ? { ...d, done: Math.max(0, Math.min(d.target, d.done + delta)) }
+        : d) };
+      persist(next);
+      return next;
+    });
+  };
+
+  const updateNotes = (val) => {
+    setData(prev => {
+      const next = { ...prev, notes: val };
+      return next;
+    });
+  };
+
+  const saveNotes = () => persist(data);
+
+  const exportBackup = () => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `prep-tracker-backup-${todayStr()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const importBackup = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        setData(parsed);
+        persist(parsed);
+        alert('Backup restored successfully.');
+      } catch (err) {
+        alert('Could not read that file — make sure it\\'s a backup exported from this app.');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  if (!loaded) {
+    return (
+      <div style={styles.loadingWrap}>
+        <div style={styles.loadingText}>loading ledger…</div>
+      </div>
+    );
+  }
+
+  const topicProgress = (topic) => {
+    const arr = data.checklist[topic.id] || [];
+    const done = arr.filter(Boolean).length;
+    return { done, total: topic.items.length };
+  };
+
+  const dsaDone = data.dsa.reduce((s, d) => s + d.done, 0);
+  const dsaTarget = data.dsa.reduce((s, d) => s + d.target, 0);
+
+  const overallDone = TOPICS.reduce((s, t) => s + topicProgress(t).done, 0) + dsaDone;
+  const overallTotal = TOPICS.reduce((s, t) => s + topicProgress(t).total, 0) + dsaTarget;
+  const overallPct = Math.round((overallDone / overallTotal) * 100);
+
+  const { day, streak, lastCompletedDate } = data.dailyPlan;
+  const todaysGroup = getPatternForDay(day);
+  const dailyTarget = getDailyTarget(day);
+  const todaysArr = data.dsaQuestions[todaysGroup.pattern] || [];
+  const unsolvedToday = todaysGroup.questions
+    .map((q, idx) => ({ q, idx, done: todaysArr[idx] }))
+    .filter(x => !x.done)
+    .slice(0, dailyTarget);
+  const doneAlready = todaysGroup.questions.filter((_, idx) => todaysArr[idx]).length;
+  const isDoneToday = lastCompletedDate === todayStr();
+
+  return (
+    <div style={styles.page}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
+        * { box-sizing: border-box; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-thumb { background: #2A303C; border-radius: 4px; }
+        button:focus-visible, input:focus-visible, textarea:focus-visible {
+          outline: 2px solid #E8A33D; outline-offset: 2px;
+        }
+      `}</style>
+
+      <header style={styles.header}>
+        <div>
+          <div style={styles.eyebrow}>PREP LEDGER — 4YOE → PRODUCT CO.</div>
+          <h1 style={styles.title}>Interview Readiness</h1>
+        </div>
+        <div style={styles.overallBadge}>
+          <div style={styles.overallPct}>{overallPct}%</div>
+          <div style={styles.overallLabel}>{overallDone}/{overallTotal} logged</div>
+        </div>
+      </header>
+
+      <div style={styles.tabs}>
+        <button
+          style={{ ...styles.tabBtn, ...(activeTab === 'daily' ? styles.tabBtnActive : {}) }}
+          onClick={() => setActiveTab('daily')}
+        >Daily Plan</button>
+        <button
+          style={{ ...styles.tabBtn, ...(activeTab === 'topics' ? styles.tabBtnActive : {}) }}
+          onClick={() => setActiveTab('topics')}
+        >Topics</button>
+        <button
+          style={{ ...styles.tabBtn, ...(activeTab === 'dsa' ? styles.tabBtnActive : {}) }}
+          onClick={() => setActiveTab('dsa')}
+        >DSA Log</button>
+        <button
+          style={{ ...styles.tabBtn, ...(activeTab === 'dsaQuestions' ? styles.tabBtnActive : {}) }}
+          onClick={() => setActiveTab('dsaQuestions')}
+        >DSA Questions</button>
+        <button
+          style={{ ...styles.tabBtn, ...(activeTab === 'notes' ? styles.tabBtnActive : {}) }}
+          onClick={() => setActiveTab('notes')}
+        >Notes</button>
+        <div style={styles.saveIndicator}>
+          {saveState === 'saving' && 'saving…'}
+          {saveState === 'saved' && 'saved ✓'}
+          {saveState === 'error' && 'save failed'}
+        </div>
+        <button style={styles.backupBtn} onClick={exportBackup} title="Download a backup file">⬇ Backup</button>
+        <label style={styles.backupBtn} title="Restore from a backup file">
+          ⬆ Restore
+          <input type="file" accept="application/json" onChange={importBackup} style={{ display: 'none' }} />
+        </label>
+      </div>
+
+      {activeTab === 'daily' && (
+        <div style={styles.dailyWrap}>
+          <div style={styles.streakRow}>
+            <div style={styles.streakCard}>
+              <div style={styles.streakNum}>{streak}</div>
+              <div style={styles.streakLabel}>day streak</div>
+            </div>
+            <div style={styles.streakCard}>
+              <div style={styles.streakNum}>{day}</div>
+              <div style={styles.streakLabel}>plan day</div>
+            </div>
+            <div style={styles.streakCard}>
+              <div style={styles.streakNum}>{dailyTarget}</div>
+              <div style={styles.streakLabel}>target/day</div>
+            </div>
+          </div>
+
+          <div style={styles.todayCard}>
+            <div style={styles.todayEyebrow}>TODAY'S PATTERN — ROTATION {((day - 1) % DSA_QUESTIONS.length) + 1}/{DSA_QUESTIONS.length}</div>
+            <div style={styles.todayTitle}>{todaysGroup.pattern}</div>
+            <div style={styles.todaySub}>{doneAlready}/{todaysGroup.questions.length} solved overall in this pattern</div>
+
+            <div style={styles.algoBox}>
+              <div style={styles.algoBoxTitle}>Know the template before you start</div>
+              {ALGO_CHECKLIST.find(a => a.pattern === todaysGroup.pattern).techniques.map((t, i) => {
+                const checked = data.algoChecklist[todaysGroup.pattern][i];
+                return (
+                  <div key={i} style={styles.algoItem}>
+                    <button
+                      onClick={() => toggleAlgo(todaysGroup.pattern, i)}
+                      style={{
+                        ...styles.checkbox,
+                        borderColor: checked ? '#4DD0E1' : '#3A4150',
+                        background: checked ? '#4DD0E1' : 'transparent',
+                      }}
+                      aria-pressed={checked}
+                    >
+                      {checked && <span style={styles.checkMark}>✓</span>}
+                    </button>
+                    <span style={{ ...styles.checkText, textDecoration: checked ? 'line-through' : 'none', opacity: checked ? 0.5 : 1 }}>{t}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={styles.todaySub}>{unsolvedToday.length > 0 ? `Today's ${unsolvedToday.length} problems:` : 'All caught up on this pattern for now 🎉'}</div>
+            <ul style={styles.checklist}>
+              {unsolvedToday.map(({ q, idx }) => (
+                <li key={idx} style={styles.checkItem}>
+                  <button
+                    onClick={() => toggleDsaQuestion(todaysGroup.pattern, idx)}
+                    style={{ ...styles.checkbox, borderColor: '#3A4150' }}
+                  />
+                  <span style={styles.checkText}>{q}</span>
+                </li>
+              ))}
+            </ul>
+
+            <button
+              style={{ ...styles.saveBtn, ...styles.dayDoneBtn, opacity: isDoneToday ? 0.6 : 1 }}
+              onClick={markDayDone}
+            >
+              {isDoneToday ? "✓ Day marked done — tap to re-confirm" : "Mark today's rep done → next pattern"}
+            </button>
+          </div>
+
+          <div style={styles.overloadNote}>
+            Progressive overload: 2/day for week 1, 3/day week 2, 4/day week 3, 5/day from week 4 on.
+            Pattern rotates daily so you keep touching every topic instead of tunneling into one.
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'topics' && (
+        <div style={styles.topicGrid}>
+          {TOPICS.map(topic => {
+            const { done, total } = topicProgress(topic);
+            const pct = Math.round((done / total) * 100);
+            return (
+              <div key={topic.id} style={styles.topicCard}>
+                <div style={styles.topicHead}>
+                  <span style={{ ...styles.topicDot, background: topic.accent }} />
+                  <span style={styles.topicLabel}>{topic.label}</span>
+                  <span style={styles.topicCount}>{done}/{total}</span>
+                </div>
+                <div style={styles.ledgerTrack}>
+                  <div style={{ ...styles.ledgerFill, width: `${pct}%`, background: topic.accent }} />
+                </div>
+                <ul style={styles.checklist}>
+                  {topic.items.map((item, idx) => {
+                    const checked = data.checklist[topic.id][idx];
+                    return (
+                      <li key={idx} style={styles.checkItem}>
+                        <button
+                          onClick={() => toggleItem(topic.id, idx)}
+                          style={{
+                            ...styles.checkbox,
+                            borderColor: checked ? topic.accent : '#3A4150',
+                            background: checked ? topic.accent : 'transparent',
+                          }}
+                          aria-pressed={checked}
+                          aria-label={item}
+                        >
+                          {checked && <span style={styles.checkMark}>✓</span>}
+                        </button>
+                        <span style={{
+                          ...styles.checkText,
+                          textDecoration: checked ? 'line-through' : 'none',
+                          opacity: checked ? 0.5 : 1,
+                        }}>{item}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {activeTab === 'dsa' && (
+        <div style={styles.dsaWrap}>
+          <div style={styles.dsaHeadRow}>
+            <span style={styles.dsaHeadLabel}>Pattern</span>
+            <span style={styles.dsaHeadLabel}>Solved</span>
+          </div>
+          {data.dsa.map((d, idx) => {
+            const pct = Math.round((d.done / d.target) * 100);
+            return (
+              <div key={d.pattern} style={styles.dsaRow}>
+                <div style={styles.dsaRowTop}>
+                  <span style={styles.dsaPattern}>{d.pattern}</span>
+                  <span style={styles.dsaFraction}>{d.done}/{d.target}</span>
+                </div>
+                <div style={styles.ledgerTrack}>
+                  <div style={{ ...styles.ledgerFill, width: `${pct}%`, background: '#E8617A' }} />
+                </div>
+                <div style={styles.dsaControls}>
+                  <button style={styles.stepBtn} onClick={() => bumpDsa(idx, -1)}>−</button>
+                  <button style={styles.stepBtn} onClick={() => bumpDsa(idx, 1)}>+</button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {activeTab === 'dsaQuestions' && (
+        <div style={styles.topicGrid}>
+          <div style={styles.filterRow}>
+            <select
+              value={dsaFilterPattern}
+              onChange={(e) => setDsaFilterPattern(e.target.value)}
+              style={styles.filterSelect}
+            >
+              <option value="all">All patterns</option>
+              {DSA_QUESTIONS.map(g => (
+                <option key={g.pattern} value={g.pattern}>{g.pattern}</option>
+              ))}
+            </select>
+            <label style={styles.filterCheckLabel}>
+              <input
+                type="checkbox"
+                checked={hideCompleted}
+                onChange={(e) => setHideCompleted(e.target.checked)}
+                style={styles.filterCheckbox}
+              />
+              Hide completed
+            </label>
+          </div>
+
+          {DSA_QUESTIONS.filter(g => dsaFilterPattern === 'all' || g.pattern === dsaFilterPattern).map(group => {
+            const arr = data.dsaQuestions[group.pattern] || [];
+            const done = arr.filter(Boolean).length;
+            const total = group.questions.length;
+            const pct = Math.round((done / total) * 100);
+            const isOpen = !collapsed[group.pattern];
+            const algoTechniques = ALGO_CHECKLIST.find(a => a.pattern === group.pattern).techniques;
+            const algoArr = data.algoChecklist[group.pattern] || [];
+            const visibleQuestions = group.questions
+              .map((q, idx) => ({ q, idx }))
+              .filter(({ idx }) => !hideCompleted || !arr[idx]);
+            return (
+              <div key={group.pattern} style={styles.topicCard}>
+                <button
+                  onClick={() => toggleCollapsed(group.pattern)}
+                  style={styles.collapseHead}
+                  aria-expanded={isOpen}
+                >
+                  <span style={{ ...styles.topicDot, background: '#E8617A' }} />
+                  <span style={styles.topicLabel}>{group.pattern}</span>
+                  <span style={styles.topicCount}>{done}/{total}</span>
+                  <span style={styles.chevron}>{isOpen ? '▾' : '▸'}</span>
+                </button>
+                <div style={styles.ledgerTrack}>
+                  <div style={{ ...styles.ledgerFill, width: `${pct}%`, background: '#E8617A' }} />
+                </div>
+                {isOpen && (
+                  <>
+                    <div style={styles.algoBoxSmall}>
+                      <div style={styles.algoBoxTitle}>Templates to know</div>
+                      {algoTechniques.map((t, i) => {
+                        const checked = algoArr[i];
+                        return (
+                          <div key={i} style={styles.algoItem}>
+                            <button
+                              onClick={() => toggleAlgo(group.pattern, i)}
+                              style={{
+                                ...styles.checkbox,
+                                borderColor: checked ? '#4DD0E1' : '#3A4150',
+                                background: checked ? '#4DD0E1' : 'transparent',
+                              }}
+                              aria-pressed={checked}
+                            >
+                              {checked && <span style={styles.checkMark}>✓</span>}
+                            </button>
+                            <span style={{ ...styles.checkText, textDecoration: checked ? 'line-through' : 'none', opacity: checked ? 0.5 : 1 }}>{t}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <ul style={styles.checklist}>
+                      {visibleQuestions.map(({ q, idx }) => {
+                        const checked = arr[idx];
+                        return (
+                          <li key={idx} style={styles.checkItem}>
+                            <button
+                              onClick={() => toggleDsaQuestion(group.pattern, idx)}
+                              style={{
+                                ...styles.checkbox,
+                                borderColor: checked ? '#E8617A' : '#3A4150',
+                                background: checked ? '#E8617A' : 'transparent',
+                              }}
+                              aria-pressed={checked}
+                              aria-label={q}
+                            >
+                              {checked && <span style={styles.checkMark}>✓</span>}
+                            </button>
+                            <span style={{
+                              ...styles.checkText,
+                              textDecoration: checked ? 'line-through' : 'none',
+                              opacity: checked ? 0.5 : 1,
+                            }}>{q}</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {activeTab === 'notes' && (
+        <div style={styles.notesWrap}>
+          <textarea
+            value={data.notes}
+            onChange={(e) => updateNotes(e.target.value)}
+            onBlur={saveNotes}
+            placeholder="Interview debriefs, company-specific notes, questions you got asked…"
+            style={styles.notesArea}
+          />
+          <button style={styles.saveBtn} onClick={saveNotes}>Save notes</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const styles = {
+  page: {
+    minHeight: '100vh',
+    background: '#0B0E14',
+    color: '#E6E9EF',
+    fontFamily: "'Inter', sans-serif",
+    padding: '20px 16px 48px',
+    maxWidth: 720,
+    margin: '0 auto',
+  },
+  loadingWrap: {
+    minHeight: '100vh',
+    background: '#0B0E14',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    color: '#8A93A6',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 13,
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginBottom: 20,
+    gap: 12,
+  },
+  eyebrow: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 11,
+    letterSpacing: '0.08em',
+    color: '#6B7280',
+    marginBottom: 6,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 700,
+    margin: 0,
+    letterSpacing: '-0.01em',
+  },
+  overallBadge: {
+    textAlign: 'right',
+    flexShrink: 0,
+  },
+  overallPct: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 26,
+    fontWeight: 700,
+    color: '#E8A33D',
+    lineHeight: 1,
+  },
+  overallLabel: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 10,
+    color: '#6B7280',
+    marginTop: 4,
+  },
+  tabs: {
+    display: 'flex',
+    gap: 6,
+    marginBottom: 16,
+    alignItems: 'center',
+    borderBottom: '1px solid #1C212B',
+    paddingBottom: 10,
+    flexWrap: 'wrap',
+  },
+  tabBtn: {
+    background: 'transparent',
+    border: '1px solid #262C38',
+    color: '#8A93A6',
+    padding: '6px 12px',
+    borderRadius: 6,
+    fontSize: 13,
+    fontFamily: "'Inter', sans-serif",
+    fontWeight: 500,
+    cursor: 'pointer',
+  },
+  tabBtnActive: {
+    background: '#161B24',
+    color: '#E6E9EF',
+    borderColor: '#3A4150',
+  },
+  saveIndicator: {
+    marginLeft: 'auto',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 11,
+    color: '#6B7280',
+  },
+  backupBtn: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 11,
+    color: '#8A93A6',
+    background: 'transparent',
+    border: '1px solid #262C38',
+    borderRadius: 6,
+    padding: '5px 9px',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+  },
+  topicGrid: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 14,
+  },
+  topicCard: {
+    background: '#10141C',
+    border: '1px solid #1C212B',
+    borderRadius: 10,
+    padding: 16,
+  },
+  topicHead: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  collapseHead: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+    background: 'transparent',
+    border: 'none',
+    padding: 0,
+    width: '100%',
+    cursor: 'pointer',
+    textAlign: 'left',
+  },
+  chevron: {
+    color: '#6B7280',
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  topicDot: {
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    flexShrink: 0,
+  },
+  topicLabel: {
+    fontWeight: 600,
+    fontSize: 14,
+    flex: 1,
+  },
+  topicCount: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 12,
+    color: '#8A93A6',
+  },
+  ledgerTrack: {
+    height: 4,
+    background: '#1C212B',
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  ledgerFill: {
+    height: '100%',
+    borderRadius: 2,
+    transition: 'width 0.3s ease',
+  },
+  checklist: {
+    listStyle: 'none',
+    margin: 0,
+    padding: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  },
+  checkItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    border: '1.5px solid #3A4150',
+    background: 'transparent',
+    flexShrink: 0,
+    marginTop: 1,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+  },
+  checkMark: {
+    fontSize: 11,
+    color: '#0B0E14',
+    fontWeight: 700,
+  },
+  checkText: {
+    fontSize: 13.5,
+    lineHeight: 1.4,
+    color: '#C7CCD6',
+  },
+  dsaWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 12,
+  },
+  dsaHeadRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    padding: '0 4px',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 10,
+    letterSpacing: '0.06em',
+    color: '#6B7280',
+  },
+  dsaHeadLabel: {},
+  dsaRow: {
+    background: '#10141C',
+    border: '1px solid #1C212B',
+    borderRadius: 10,
+    padding: 14,
+  },
+  dsaRowTop: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  dsaPattern: {
+    fontSize: 14,
+    fontWeight: 500,
+  },
+  dsaFraction: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 13,
+    color: '#E8617A',
+  },
+  dsaControls: {
+    display: 'flex',
+    gap: 8,
+    marginTop: 10,
+    justifyContent: 'flex-end',
+  },
+  stepBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    border: '1px solid #262C38',
+    background: '#161B24',
+    color: '#E6E9EF',
+    fontSize: 16,
+    cursor: 'pointer',
+    fontFamily: "'JetBrains Mono', monospace",
+  },
+  notesWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  },
+  notesArea: {
+    minHeight: 320,
+    background: '#10141C',
+    border: '1px solid #1C212B',
+    borderRadius: 10,
+    padding: 14,
+    color: '#E6E9EF',
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 13,
+    lineHeight: 1.6,
+    resize: 'vertical',
+  },
+  saveBtn: {
+    alignSelf: 'flex-end',
+    background: '#E8A33D',
+    color: '#0B0E14',
+    border: 'none',
+    borderRadius: 6,
+    padding: '8px 16px',
+    fontWeight: 600,
+    fontSize: 13,
+    cursor: 'pointer',
+  },
+  dailyWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 16,
+  },
+  streakRow: {
+    display: 'flex',
+    gap: 10,
+  },
+  streakCard: {
+    flex: 1,
+    background: '#10141C',
+    border: '1px solid #1C212B',
+    borderRadius: 10,
+    padding: '14px 10px',
+    textAlign: 'center',
+  },
+  streakNum: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 24,
+    fontWeight: 700,
+    color: '#4DD0E1',
+  },
+  streakLabel: {
+    fontSize: 11,
+    color: '#8A93A6',
+    marginTop: 4,
+  },
+  todayCard: {
+    background: '#10141C',
+    border: '1px solid #1C212B',
+    borderRadius: 10,
+    padding: 18,
+  },
+  todayEyebrow: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 10,
+    letterSpacing: '0.06em',
+    color: '#6B7280',
+    marginBottom: 6,
+  },
+  todayTitle: {
+    fontSize: 20,
+    fontWeight: 700,
+    marginBottom: 4,
+  },
+  todaySub: {
+    fontSize: 12,
+    color: '#8A93A6',
+    marginBottom: 12,
+  },
+  algoBox: {
+    background: '#0D1119',
+    border: '1px solid #232A36',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 14,
+  },
+  algoBoxSmall: {
+    background: '#0D1119',
+    border: '1px solid #232A36',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  algoBoxTitle: {
+    fontSize: 11,
+    fontWeight: 600,
+    color: '#4DD0E1',
+    marginBottom: 8,
+    letterSpacing: '0.02em',
+  },
+  algoItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 6,
+  },
+  dayDoneBtn: {
+    width: '100%',
+    marginTop: 6,
+    padding: '12px 16px',
+  },
+  overloadNote: {
+    fontSize: 11.5,
+    color: '#6B7280',
+    lineHeight: 1.5,
+    padding: '0 4px',
+  },
+  filterRow: {
+    display: 'flex',
+    gap: 12,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginBottom: 4,
+  },
+  filterSelect: {
+    background: '#10141C',
+    color: '#E6E9EF',
+    border: '1px solid #262C38',
+    borderRadius: 6,
+    padding: '7px 10px',
+    fontSize: 13,
+    fontFamily: "'Inter', sans-serif",
+  },
+  filterCheckLabel: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 12.5,
+    color: '#8A93A6',
+    cursor: 'pointer',
+  },
+  filterCheckbox: {
+    accentColor: '#E8617A',
+    width: 14,
+    height: 14,
+  },
+};
+
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  root.render(<PrepTracker />);
+</script>
+</body>
+</html>
