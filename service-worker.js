@@ -1,6 +1,5 @@
-const CACHE_NAME = 'prep-tracker-v1';
+const CACHE_NAME = 'prep-tracker-v2';
 const ASSETS = [
-  './index.html',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',
@@ -23,14 +22,29 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Network-first for CDN scripts (react/babel), cache-first for app shell
   const url = event.request.url;
-  if (url.includes('unpkg.com')) {
+
+  // Always try the network first for the app shell (index.html) and CDN
+  // scripts, so updates show up immediately. Fall back to cache only when
+  // offline. Static assets (icons, manifest) are cache-first since they
+  // rarely change.
+  const isAppShellOrCDN =
+    event.request.mode === 'navigate' ||
+    url.endsWith('index.html') ||
+    url.includes('unpkg.com');
+
+  if (isAppShellOrCDN) {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
+      fetch(event.request)
+        .then((res) => {
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, res.clone()));
+          return res;
+        })
+        .catch(() => caches.match(event.request))
     );
     return;
   }
+
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request))
   );

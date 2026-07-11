@@ -410,7 +410,7 @@ function PrepTracker() {
         persist(parsed);
         alert('Backup restored successfully.');
       } catch (err) {
-        alert('Could not read that file — make sure it\\'s a backup exported from this app.');
+        alert('Could not read that file. Make sure it is a backup exported from this app.');
       }
     };
     reader.readAsText(file);
