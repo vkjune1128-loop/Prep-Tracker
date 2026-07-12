@@ -187,6 +187,19 @@ function getPatternForDay(day) {
   const idx = (day - 1) % DSA_QUESTIONS.length;
   return DSA_QUESTIONS[idx];
 }
+
+// Returns a { streak, lastCompletedDate } patch if today hasn't been logged
+// yet, or null if it's already logged (avoids double-counting).
+function computeStreakPatch(dailyPlan) {
+  const today = todayStr();
+  if (dailyPlan.lastCompletedDate === today) return null;
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const newStreak = dailyPlan.lastCompletedDate === yesterday ? dailyPlan.streak + 1 : 1;
+  return {
+    streak: newStreak,
+    lastCompletedDate: today
+  };
+}
 function PrepTracker() {
   const [data, setData] = useState(loadDefault());
   const [loaded, setLoaded] = useState(false);
@@ -262,6 +275,33 @@ function PrepTracker() {
       return next;
     });
   }, [loaded, data.dailyPlan.day]);
+
+  // Auto-log the streak the moment every problem in today's frozen set is
+  // checked off, so completing the checklist itself is what counts --
+  // pressing "next pattern" is only needed to advance to tomorrow's pattern.
+  useEffect(() => {
+    if (!loaded) return;
+    const {
+      todaysQuestions
+    } = data.dailyPlan;
+    if (!todaysQuestions || todaysQuestions.indices.length === 0) return;
+    const arr = data.dsaQuestions[todaysQuestions.pattern] || [];
+    const allDone = todaysQuestions.indices.every(idx => arr[idx]);
+    if (!allDone) return;
+    const patch = computeStreakPatch(data.dailyPlan);
+    if (!patch) return;
+    setData(prev => {
+      const next = {
+        ...prev,
+        dailyPlan: {
+          ...prev.dailyPlan,
+          ...patch
+        }
+      };
+      persist(next);
+      return next;
+    });
+  }, [loaded, data.dsaQuestions, data.dailyPlan.todaysQuestions, data.dailyPlan.lastCompletedDate]);
   const persist = useCallback(async next => {
     setSaveState('saving');
     try {
@@ -316,22 +356,13 @@ function PrepTracker() {
   };
   const markDayDone = () => {
     setData(prev => {
-      const today = todayStr();
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      const {
-        lastCompletedDate,
-        streak,
-        day
-      } = prev.dailyPlan;
-      let newStreak = 1;
-      if (lastCompletedDate === yesterday) newStreak = streak + 1;else if (lastCompletedDate === today) newStreak = streak;
+      const patch = computeStreakPatch(prev.dailyPlan) || {};
       const next = {
         ...prev,
         dailyPlan: {
           ...prev.dailyPlan,
-          day: lastCompletedDate === today ? day : day + 1,
-          streak: newStreak,
-          lastCompletedDate: today,
+          ...patch,
+          day: prev.dailyPlan.day + 1,
           todaysQuestions: null
         }
       };
@@ -585,11 +616,12 @@ function PrepTracker() {
   }, q)))), /*#__PURE__*/React.createElement("button", {
     style: {
       ...styles.saveBtn,
-      ...styles.dayDoneBtn,
-      opacity: isDoneToday ? 0.6 : 1
+      ...styles.dayDoneBtn
     },
     onClick: markDayDone
-  }, isDoneToday ? "✓ Day marked done — tap to re-confirm" : "Mark today's rep done → next pattern")), /*#__PURE__*/React.createElement("div", {
+  }, "Move to next pattern →"), /*#__PURE__*/React.createElement("div", {
+    style: styles.streakStatus
+  }, isDoneToday ? '✓ Streak logged for today' : 'Finish the checklist above and your streak logs automatically')), /*#__PURE__*/React.createElement("div", {
     style: styles.overloadNote
   }, "Progressive overload: 2/day for week 1, 3/day week 2, 4/day week 3, 5/day from week 4 on. Pattern rotates daily so you keep touching every topic instead of tunneling into one.")), activeTab === 'topics' && /*#__PURE__*/React.createElement("div", {
     style: styles.topicGrid
@@ -1177,6 +1209,12 @@ const styles = {
     width: '100%',
     marginTop: 6,
     padding: '12px 16px'
+  },
+  streakStatus: {
+    fontSize: 11.5,
+    color: '#8A93A6',
+    textAlign: 'center',
+    marginTop: 8
   },
   overloadNote: {
     fontSize: 11.5,
