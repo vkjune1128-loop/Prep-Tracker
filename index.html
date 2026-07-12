@@ -165,7 +165,8 @@ function loadDefault() {
   const dailyPlan = {
     day: 1,
     streak: 0,
-    lastCompletedDate: null
+    lastCompletedDate: null,
+    todaysQuestions: null
   };
   return {
     checklist,
@@ -235,6 +236,32 @@ function PrepTracker() {
       }
     })();
   }, []);
+  useEffect(() => {
+    if (!loaded) return;
+    setData(prev => {
+      const group = getPatternForDay(prev.dailyPlan.day);
+      const target = getDailyTarget(prev.dailyPlan.day);
+      const existing = prev.dailyPlan.todaysQuestions;
+      if (existing && existing.day === prev.dailyPlan.day && existing.pattern === group.pattern) {
+        return prev;
+      }
+      const arr = prev.dsaQuestions[group.pattern] || [];
+      const indices = group.questions.map((_, idx) => idx).filter(idx => !arr[idx]).slice(0, target);
+      const next = {
+        ...prev,
+        dailyPlan: {
+          ...prev.dailyPlan,
+          todaysQuestions: {
+            day: prev.dailyPlan.day,
+            pattern: group.pattern,
+            indices
+          }
+        }
+      };
+      persist(next);
+      return next;
+    });
+  }, [loaded, data.dailyPlan.day]);
   const persist = useCallback(async next => {
     setSaveState('saving');
     try {
@@ -301,9 +328,11 @@ function PrepTracker() {
       const next = {
         ...prev,
         dailyPlan: {
+          ...prev.dailyPlan,
           day: lastCompletedDate === today ? day : day + 1,
           streak: newStreak,
-          lastCompletedDate: today
+          lastCompletedDate: today,
+          todaysQuestions: null
         }
       };
       persist(next);
@@ -386,16 +415,18 @@ function PrepTracker() {
   const {
     day,
     streak,
-    lastCompletedDate
+    lastCompletedDate,
+    todaysQuestions
   } = data.dailyPlan;
   const todaysGroup = getPatternForDay(day);
   const dailyTarget = getDailyTarget(day);
   const todaysArr = data.dsaQuestions[todaysGroup.pattern] || [];
-  const unsolvedToday = todaysGroup.questions.map((q, idx) => ({
-    q,
+  const frozenIndices = todaysQuestions && todaysQuestions.day === day && todaysQuestions.pattern === todaysGroup.pattern ? todaysQuestions.indices : [];
+  const unsolvedToday = frozenIndices.map(idx => ({
+    q: todaysGroup.questions[idx],
     idx,
     done: todaysArr[idx]
-  })).filter(x => !x.done).slice(0, dailyTarget);
+  }));
   const doneAlready = todaysGroup.questions.filter((_, idx) => todaysArr[idx]).length;
   const isDoneToday = lastCompletedDate === todayStr();
   return /*#__PURE__*/React.createElement("div", {
@@ -526,11 +557,12 @@ function PrepTracker() {
     }, t));
   })), /*#__PURE__*/React.createElement("div", {
     style: styles.todaySub
-  }, unsolvedToday.length > 0 ? `Today's ${unsolvedToday.length} problems:` : 'All caught up on this pattern for now 🎉'), /*#__PURE__*/React.createElement("ul", {
+  }, unsolvedToday.length > 0 ? `Today's problems — ${unsolvedToday.filter(x => x.done).length}/${unsolvedToday.length} done:` : 'All caught up on this pattern for now 🎉'), /*#__PURE__*/React.createElement("ul", {
     style: styles.checklist
   }, unsolvedToday.map(({
     q,
-    idx
+    idx,
+    done
   }) => /*#__PURE__*/React.createElement("li", {
     key: idx,
     style: styles.checkItem
@@ -538,10 +570,18 @@ function PrepTracker() {
     onClick: () => toggleDsaQuestion(todaysGroup.pattern, idx),
     style: {
       ...styles.checkbox,
-      borderColor: '#3A4150'
+      borderColor: done ? '#4DD0E1' : '#3A4150',
+      background: done ? '#4DD0E1' : 'transparent'
+    },
+    "aria-pressed": done
+  }, done && /*#__PURE__*/React.createElement("span", {
+    style: styles.checkMark
+  }, "✓")), /*#__PURE__*/React.createElement("span", {
+    style: {
+      ...styles.checkText,
+      textDecoration: done ? 'line-through' : 'none',
+      opacity: done ? 0.5 : 1
     }
-  }), /*#__PURE__*/React.createElement("span", {
-    style: styles.checkText
   }, q)))), /*#__PURE__*/React.createElement("button", {
     style: {
       ...styles.saveBtn,
@@ -901,7 +941,9 @@ const styles = {
     padding: 0,
     width: '100%',
     cursor: 'pointer',
-    textAlign: 'left'
+    textAlign: 'left',
+    color: '#E6E9EF',
+    font: 'inherit'
   },
   chevron: {
     color: '#6B7280',
