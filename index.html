@@ -112,6 +112,25 @@ const DSA_QUESTIONS = [{
   pattern: 'DP (basic)',
   questions: ['Climbing Stairs', 'House Robber', 'House Robber II', 'Longest Palindromic Substring', 'Palindromic Substrings', 'Decode Ways', 'Coin Change', 'Maximum Product Subarray', 'Word Break', 'Longest Increasing Subsequence', 'Partition Equal Subset Sum', 'Unique Paths', 'Longest Common Subsequence', 'Best Time to Buy/Sell Stock with Cooldown', 'Target Sum', 'Interleaving String', 'Edit Distance', "Maximum Subarray (Kadane's)", 'Jump Game', '0/1 Knapsack (conceptual)']
 }];
+
+function slugifyProblemTitle(title) {
+  return title.toLowerCase().replace(/\([^)]*\)/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+function makeQuestion(pattern, title) {
+  const slug = slugifyProblemTitle(title);
+  return {
+    id: `leetcode-${slug}`,
+    title,
+    pattern,
+    platform: 'LeetCode',
+    url: `https://leetcode.com/problems/${slug}/`,
+    source: 'spreadsheet-compatible',
+    notes: ''
+  };
+}
+DSA_QUESTIONS.forEach(group => {
+  group.questions = group.questions.map(title => typeof title === 'string' ? makeQuestion(group.pattern, title) : title);
+});
 const ALGO_CHECKLIST = [{
   pattern: 'Arrays & Hashing',
   techniques: ['Hashmap frequency-count pattern', 'Prefix sum technique', 'Sort-based dedup / two-pointer variant']
@@ -174,6 +193,7 @@ function loadDefault() {
     dsaQuestions,
     algoChecklist,
     dailyPlan,
+    dsaQuestionNotes: {},
     notes: ''
   };
 }
@@ -199,6 +219,36 @@ function computeStreakPatch(dailyPlan) {
     streak: newStreak,
     lastCompletedDate: today
   };
+}
+
+function QuestionDetails({ question, checked, notes, onNotesChange }) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: styles.questionBody
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.questionTitleRow
+  }, question.url ? /*#__PURE__*/React.createElement("a", {
+    href: question.url,
+    target: "_blank",
+    rel: "noopener noreferrer",
+    style: {
+      ...styles.questionLink,
+      textDecoration: checked ? 'line-through' : 'none',
+      opacity: checked ? 0.55 : 1
+    }
+  }, question.title) : /*#__PURE__*/React.createElement("span", {
+    style: {
+      ...styles.checkText,
+      textDecoration: checked ? 'line-through' : 'none',
+      opacity: checked ? 0.55 : 1
+    }
+  }, question.title), question.platform && /*#__PURE__*/React.createElement("span", {
+    style: styles.platformBadge
+  }, question.platform)), /*#__PURE__*/React.createElement("textarea", {
+    value: notes,
+    onChange: e => onNotesChange(e.target.value),
+    placeholder: "Notes / approach / mistakes...",
+    style: styles.questionNotes
+  }));
 }
 function PrepTracker() {
   const [data, setData] = useState(loadDefault());
@@ -230,6 +280,10 @@ function PrepTracker() {
             dsaQuestions: {
               ...def.dsaQuestions,
               ...saved.dsaQuestions
+            },
+            dsaQuestionNotes: {
+              ...def.dsaQuestionNotes,
+              ...(saved.dsaQuestionNotes || {})
             },
             algoChecklist: {
               ...def.algoChecklist,
@@ -378,6 +432,19 @@ function PrepTracker() {
           ...d,
           done: Math.max(0, Math.min(d.target, d.done + delta))
         } : d)
+      };
+      persist(next);
+      return next;
+    });
+  };
+  const updateDsaQuestionNotes = (questionId, val) => {
+    setData(prev => {
+      const next = {
+        ...prev,
+        dsaQuestionNotes: {
+          ...(prev.dsaQuestionNotes || {}),
+          [questionId]: val
+        }
       };
       persist(next);
       return next;
@@ -607,13 +674,12 @@ function PrepTracker() {
     "aria-pressed": done
   }, done && /*#__PURE__*/React.createElement("span", {
     style: styles.checkMark
-  }, "✓")), /*#__PURE__*/React.createElement("span", {
-    style: {
-      ...styles.checkText,
-      textDecoration: done ? 'line-through' : 'none',
-      opacity: done ? 0.5 : 1
-    }
-  }, q)))), /*#__PURE__*/React.createElement("button", {
+  }, "✓")), /*#__PURE__*/React.createElement(QuestionDetails, {
+    question: q,
+    checked: done,
+    notes: (data.dsaQuestionNotes || {})[q.id] || '',
+    onNotesChange: val => updateDsaQuestionNotes(q.id, val)
+  })))), /*#__PURE__*/React.createElement("button", {
     style: {
       ...styles.saveBtn,
       ...styles.dayDoneBtn
@@ -819,16 +885,15 @@ function PrepTracker() {
           background: checked ? '#E8617A' : 'transparent'
         },
         "aria-pressed": checked,
-        "aria-label": q
+        "aria-label": q.title
       }, checked && /*#__PURE__*/React.createElement("span", {
         style: styles.checkMark
-      }, "✓")), /*#__PURE__*/React.createElement("span", {
-        style: {
-          ...styles.checkText,
-          textDecoration: checked ? 'line-through' : 'none',
-          opacity: checked ? 0.5 : 1
-        }
-      }, q));
+      }, "✓")), /*#__PURE__*/React.createElement(QuestionDetails, {
+        question: q,
+        checked,
+        notes: (data.dsaQuestionNotes || {})[q.id] || '',
+        onNotesChange: val => updateDsaQuestionNotes(q.id, val)
+      }));
     }))));
   })), activeTab === 'notes' && /*#__PURE__*/React.createElement("div", {
     style: styles.notesWrap
@@ -1022,6 +1087,43 @@ const styles = {
     display: 'flex',
     alignItems: 'flex-start',
     gap: 10
+  },
+  questionBody: {
+    flex: 1,
+    minWidth: 0
+  },
+  questionTitleRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap'
+  },
+  questionLink: {
+    color: '#E6E9EF',
+    fontSize: 14,
+    lineHeight: 1.4
+  },
+  platformBadge: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 10,
+    color: '#4DD0E1',
+    border: '1px solid #264653',
+    borderRadius: 999,
+    padding: '2px 6px',
+    background: '#0D2028'
+  },
+  questionNotes: {
+    width: '100%',
+    minHeight: 34,
+    marginTop: 6,
+    resize: 'vertical',
+    background: '#0B0E14',
+    color: '#C8CEDA',
+    border: '1px solid #262C38',
+    borderRadius: 6,
+    padding: '6px 8px',
+    fontFamily: "'Inter', sans-serif",
+    fontSize: 12
   },
   checkbox: {
     width: 18,
