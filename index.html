@@ -23,23 +23,60 @@
 <div id="root"></div>
 <script>
   // localStorage-backed shim matching the storage interface the component expects
+  // In-memory fallback used only if localStorage itself is unavailable or
+  // blocked (e.g. private/incognito browsing on some browsers restricts it
+  // to a 0-byte quota). This keeps the app usable for the session even
+  // then, instead of showing "save failed" on every single action.
+  const memoryFallback = {};
+  let usingFallback = false;
+
+  function warnFallbackOnce() {
+    if (usingFallback) return;
+    usingFallback = true;
+    console.warn('[PrepTracker] localStorage is unavailable in this browser/mode -- falling back to in-memory storage. Your progress will NOT persist after closing this tab. This commonly happens in private/incognito browsing.');
+  }
+
   window.storage = {
     async get(key) {
-      const v = localStorage.getItem(key);
-      if (v === null) return null;
-      return { key, value: v, shared: false };
+      try {
+        const v = localStorage.getItem(key);
+        if (v === null) return null;
+        return { key, value: v, shared: false };
+      } catch (e) {
+        warnFallbackOnce();
+        return memoryFallback[key] !== undefined ? { key, value: memoryFallback[key], shared: false } : null;
+      }
     },
     async set(key, value) {
-      localStorage.setItem(key, value);
-      return { key, value, shared: false };
+      try {
+        localStorage.setItem(key, value);
+        return { key, value, shared: false };
+      } catch (e) {
+        console.error('[PrepTracker] localStorage.setItem failed:', e.name, e.message);
+        warnFallbackOnce();
+        memoryFallback[key] = value;
+        // Still resolve successfully so the UI shows "saved" -- the data IS
+        // safe for this session, just not across reloads. The console
+        // warning above is the real signal something's off.
+        return { key, value, shared: false };
+      }
     },
     async delete(key) {
-      localStorage.removeItem(key);
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {
+        delete memoryFallback[key];
+      }
       return { key, deleted: true, shared: false };
     },
     async list(prefix) {
-      const keys = Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix));
-      return { keys, prefix, shared: false };
+      try {
+        const keys = Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix));
+        return { keys, prefix, shared: false };
+      } catch (e) {
+        const keys = Object.keys(memoryFallback).filter(k => !prefix || k.startsWith(prefix));
+        return { keys, prefix, shared: false };
+      }
     }
   };
 
@@ -84,81 +121,1291 @@ const TOPICS = [{
   items: ['LLD: design patterns + OOP in a mock class design', 'HLD: load balancing, caching, sharding, CAP', 'Design a URL shortener', 'Design a rate limiter', 'Design a notification system']
 }];
 const DSA_PATTERNS = ['Arrays & Hashing', 'Two Pointers', 'Sliding Window', 'Stack', 'Binary Search', 'Trees', 'Graphs (BFS/DFS)', 'Backtracking', 'DP (basic)'];
-const DSA_QUESTIONS = [{
-  pattern: 'Arrays & Hashing',
-  questions: ['Two Sum', 'Contains Duplicate', 'Valid Anagram', 'Group Anagrams', 'Top K Frequent Elements', 'Product of Array Except Self', 'Valid Sudoku', 'Longest Consecutive Sequence', 'Encode and Decode Strings', 'Subarray Sum Equals K', 'Majority Element', 'Merge Intervals', 'Insert Interval', 'Non-overlapping Intervals', 'Set Matrix Zeroes']
-}, {
-  pattern: 'Two Pointers',
-  questions: ['Valid Palindrome', 'Two Sum II (sorted)', '3Sum', 'Container With Most Water', 'Trapping Rain Water', 'Sort Colors', 'Remove Duplicates from Sorted Array', 'Move Zeroes', '4Sum', 'Backspace String Compare']
-}, {
-  pattern: 'Sliding Window',
-  questions: ['Best Time to Buy/Sell Stock', 'Longest Substring Without Repeating Characters', 'Longest Repeating Character Replacement', 'Permutation in String', 'Minimum Window Substring', 'Sliding Window Maximum', 'Fruit Into Baskets', 'Max Consecutive Ones III', 'Longest Substring with K Distinct Characters', 'Find All Anagrams in a String', 'Maximum Sum Subarray of Size K', 'Minimum Size Subarray Sum']
-}, {
-  pattern: 'Stack',
-  questions: ['Valid Parentheses', 'Min Stack', 'Evaluate Reverse Polish Notation', 'Generate Parentheses', 'Daily Temperatures', 'Car Fleet', 'Largest Rectangle in Histogram', 'Next Greater Element', 'Asteroid Collision', 'Decode String']
-}, {
-  pattern: 'Binary Search',
-  questions: ['Binary Search (basic)', 'Search in Rotated Sorted Array', 'Find Minimum in Rotated Sorted Array', 'Search a 2D Matrix', 'Koko Eating Bananas', 'Time Based Key-Value Store', 'Median of Two Sorted Arrays', 'Find Peak Element', 'Capacity to Ship Packages', 'Split Array Largest Sum']
-}, {
-  pattern: 'Trees',
-  questions: ['Invert Binary Tree', 'Maximum Depth of Binary Tree', 'Diameter of Binary Tree', 'Balanced Binary Tree', 'Same Tree', 'Subtree of Another Tree', 'Lowest Common Ancestor of BST', 'Binary Tree Level Order Traversal', 'Binary Tree Right Side View', 'Count Good Nodes in Binary Tree', 'Validate BST', 'Kth Smallest Element in BST', 'Construct Binary Tree from Preorder/Inorder', 'Binary Tree Maximum Path Sum', 'Serialize/Deserialize Binary Tree', 'Trie implementation', 'Word Search II', 'Add and Search Word']
-}, {
-  pattern: 'Graphs (BFS/DFS)',
-  questions: ['Number of Islands', 'Clone Graph', 'Max Area of Island', 'Pacific Atlantic Water Flow', 'Surrounded Regions', 'Rotting Oranges', 'Walls and Gates', 'Course Schedule', 'Course Schedule II', 'Redundant Connection', 'Number of Connected Components', 'Graph Valid Tree', 'Word Ladder', 'Alien Dictionary', 'Network Delay Time (Dijkstra basics)']
-}, {
-  pattern: 'Backtracking',
-  questions: ['Subsets', 'Combination Sum', 'Permutations', 'Subsets II', 'Combination Sum II', 'Word Search', 'Palindrome Partitioning', 'Letter Combinations of a Phone Number', 'N-Queens (idea only)', 'Sudoku Solver (conceptual)']
-}, {
-  pattern: 'DP (basic)',
-  questions: ['Climbing Stairs', 'House Robber', 'House Robber II', 'Longest Palindromic Substring', 'Palindromic Substrings', 'Decode Ways', 'Coin Change', 'Maximum Product Subarray', 'Word Break', 'Longest Increasing Subsequence', 'Partition Equal Subset Sum', 'Unique Paths', 'Longest Common Subsequence', 'Best Time to Buy/Sell Stock with Cooldown', 'Target Sum', 'Interleaving String', 'Edit Distance', "Maximum Subarray (Kadane's)", 'Jump Game', '0/1 Knapsack (conceptual)']
-}];
 
-function slugifyProblemTitle(title) {
-  return title.toLowerCase().replace(/\([^)]*\)/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-}
-function makeQuestion(pattern, title) {
-  const slug = slugifyProblemTitle(title);
-  return {
-    id: `leetcode-${slug}`,
-    title,
-    pattern,
-    platform: 'LeetCode',
-    url: `https://leetcode.com/problems/${slug}/`,
-    source: 'spreadsheet-compatible',
-    notes: ''
-  };
-}
-DSA_QUESTIONS.forEach(group => {
-  group.questions = group.questions.map(title => typeof title === 'string' ? makeQuestion(group.pattern, title) : title);
-});
-const ALGO_CHECKLIST = [{
-  pattern: 'Arrays & Hashing',
-  techniques: ['Hashmap frequency-count pattern', 'Prefix sum technique', 'Sort-based dedup / two-pointer variant']
+// Curated DSA problem bank -- pattern/sub-pattern taxonomy adapted from the
+// user's own spreadsheet, but used as a guide rather than a fixed calendar.
+// Each entry is one problem; SUBPATTERN_ORDER drives which sub-pattern is
+// "new" material for a given plan day, cycling through core patterns first
+// and then advanced/competitive ones. Spaced repetition (see below) handles
+// bringing already-solved problems back for review.
+const PROBLEM_BANK = [{
+  "id": 0,
+  "topic": "Sliding Window",
+  "subPattern": "Fixed Window",
+  "tier": "core",
+  "problem": "643. Maximum Average Subarray I",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/maximum-average-subarray-i/"
 }, {
-  pattern: 'Two Pointers',
-  techniques: ['Opposite-end pointers on sorted array', 'Fast/slow pointer', 'Two-pointer merge technique']
+  "id": 1,
+  "topic": "Sliding Window",
+  "subPattern": "Fixed Window",
+  "tier": "core",
+  "problem": "1456. Maximum Number of Vowels in a Substring of Given Length",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/maximum-number-of-vowels-in-a-substring-of-given-length/"
 }, {
-  pattern: 'Sliding Window',
-  techniques: ['Fixed-size window template', 'Variable-size window (expand/shrink)', 'Window state via hashmap/count array']
+  "id": 2,
+  "topic": "Sliding Window",
+  "subPattern": "Variable Window",
+  "tier": "core",
+  "problem": "3. Longest Substring Without Repeating Characters",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/longest-substring-without-repeating-characters/"
 }, {
-  pattern: 'Stack',
-  techniques: ['Monotonic stack (next greater/smaller)', 'Stack for matching/parsing', 'Stack-based simulation']
+  "id": 3,
+  "topic": "Sliding Window",
+  "subPattern": "Variable Window",
+  "tier": "core",
+  "problem": "1004. Max Consecutive Ones III",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/max-consecutive-ones-iii/"
 }, {
-  pattern: 'Binary Search',
-  techniques: ['Classic binary search template', 'Binary search on answer space', 'Rotated array / 2D matrix variants']
+  "id": 4,
+  "topic": "Sliding Window",
+  "subPattern": "Variable Window",
+  "tier": "core",
+  "problem": "76. Minimum Window Substring",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/minimum-window-substring/"
 }, {
-  pattern: 'Trees',
-  techniques: ['Recursive DFS (pre/in/post order)', 'Iterative BFS with queue', 'Tree construction from traversal']
+  "id": 5,
+  "topic": "Sliding Window",
+  "subPattern": "Variable Window Optimized",
+  "tier": "core",
+  "problem": "424. Longest Repeating Character Replacement",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/longest-repeating-character-replacement/"
 }, {
-  pattern: 'Graphs (BFS/DFS)',
-  techniques: ['Grid BFS/DFS traversal', "Topological sort (Kahn's / DFS)", 'Union-Find basics']
+  "id": 6,
+  "topic": "Sliding Window",
+  "subPattern": "Variable Window Optimized",
+  "tier": "core",
+  "problem": "992. Subarrays with K Different Integers",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/subarrays-with-k-different-integers/"
 }, {
-  pattern: 'Backtracking',
-  techniques: ['Choose-explore-unchoose template', 'Pruning strategies', 'Visited-state tracking']
+  "id": 7,
+  "topic": "Two Pointers",
+  "subPattern": "Opposite Direction",
+  "tier": "core",
+  "problem": "167. Two Sum II - Input Array Is Sorted",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/two-sum-ii-input-array-is-sorted/"
 }, {
-  pattern: 'DP (basic)',
-  techniques: ['1D DP table + base cases', '2D DP table (grid/two strings)', 'Space-optimized rolling array']
+  "id": 8,
+  "topic": "Two Pointers",
+  "subPattern": "Opposite Direction",
+  "tier": "core",
+  "problem": "11. Container With Most Water",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/container-with-most-water/"
+}, {
+  "id": 9,
+  "topic": "Two Pointers",
+  "subPattern": "Opposite Direction",
+  "tier": "core",
+  "problem": "42. Trapping Rain Water",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/trapping-rain-water/"
+}, {
+  "id": 10,
+  "topic": "Two Pointers",
+  "subPattern": "Comparing Arrays",
+  "tier": "core",
+  "problem": "392. Is Subsequence",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/is-subsequence/"
+}, {
+  "id": 11,
+  "topic": "Two Pointers",
+  "subPattern": "Comparing Arrays",
+  "tier": "core",
+  "problem": "15. 3Sum",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/3sum/"
+}, {
+  "id": 12,
+  "topic": "Trees: DFS",
+  "subPattern": "Bottom-Up Recursion",
+  "tier": "core",
+  "problem": "104. Maximum Depth of Binary Tree",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/maximum-depth-of-binary-tree/"
+}, {
+  "id": 13,
+  "topic": "Trees: DFS",
+  "subPattern": "Bottom-Up Recursion",
+  "tier": "core",
+  "problem": "543. Diameter of Binary Tree",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/diameter-of-binary-tree/"
+}, {
+  "id": 14,
+  "topic": "Trees: DFS",
+  "subPattern": "Bottom-Up Recursion",
+  "tier": "core",
+  "problem": "124. Binary Tree Maximum Path Sum",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/binary-tree-maximum-path-sum/"
+}, {
+  "id": 15,
+  "topic": "Trees: DFS",
+  "subPattern": "Global State Tracking",
+  "tier": "core",
+  "problem": "1448. Count Good Nodes in Binary Tree",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/count-good-nodes-in-binary-tree/"
+}, {
+  "id": 16,
+  "topic": "Trees: DFS",
+  "subPattern": "Global State Tracking",
+  "tier": "core",
+  "problem": "236. Lowest Common Ancestor of a Binary Tree",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/lowest-common-ancestor-of-a-binary-tree/"
+}, {
+  "id": 17,
+  "topic": "Monotonic Stack",
+  "subPattern": "Next Greater Element",
+  "tier": "core",
+  "problem": "496. Next Greater Element I",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/next-greater-element-i/"
+}, {
+  "id": 18,
+  "topic": "Monotonic Stack",
+  "subPattern": "Next Greater Element",
+  "tier": "core",
+  "problem": "739. Daily Temperatures",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/daily-temperatures/"
+}, {
+  "id": 19,
+  "topic": "Monotonic Stack",
+  "subPattern": "Stack with Indices",
+  "tier": "core",
+  "problem": "907. Sum of Subarray Minimums",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/sum-of-subarray-minimums/"
+}, {
+  "id": 20,
+  "topic": "Monotonic Stack",
+  "subPattern": "Stack with Indices",
+  "tier": "core",
+  "problem": "84. Largest Rectangle in Histogram",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/largest-rectangle-in-histogram/"
+}, {
+  "id": 21,
+  "topic": "Graphs: BFS",
+  "subPattern": "Shortest Path (Unweighted)",
+  "tier": "core",
+  "problem": "1091. Shortest Path in Binary Matrix",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/shortest-path-in-binary-matrix/"
+}, {
+  "id": 22,
+  "topic": "Graphs: BFS",
+  "subPattern": "Shortest Path (Unweighted)",
+  "tier": "core",
+  "problem": "127. Word Ladder",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/word-ladder/"
+}, {
+  "id": 23,
+  "topic": "Graphs: BFS",
+  "subPattern": "Multi-source BFS",
+  "tier": "core",
+  "problem": "994. Rotting Oranges",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/rotting-oranges/"
+}, {
+  "id": 24,
+  "topic": "Graphs: BFS",
+  "subPattern": "Multi-source BFS",
+  "tier": "core",
+  "problem": "1926. Nearest Exit from Entrance in Maze",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/nearest-exit-from-entrance-in-maze/"
+}, {
+  "id": 25,
+  "topic": "Binary Search on Answer",
+  "subPattern": "Finding Min Max",
+  "tier": "core",
+  "problem": "875. Koko Eating Bananas",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/koko-eating-bananas/"
+}, {
+  "id": 26,
+  "topic": "Binary Search on Answer",
+  "subPattern": "Finding Min Max",
+  "tier": "core",
+  "problem": "1011. Capacity To Ship Packages Within D Days",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/capacity-to-ship-packages-within-d-days/"
+}, {
+  "id": 27,
+  "topic": "Binary Search on Answer",
+  "subPattern": "Aggressive Placement",
+  "tier": "core",
+  "problem": "1552. Magnetic Force Between Two Balls",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/magnetic-force-between-two-balls/"
+}, {
+  "id": 28,
+  "topic": "Dynamic Programming: 1D",
+  "subPattern": "State Transition",
+  "tier": "core",
+  "problem": "70. Climbing Stairs",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/climbing-stairs/"
+}, {
+  "id": 29,
+  "topic": "Dynamic Programming: 1D",
+  "subPattern": "State Transition",
+  "tier": "core",
+  "problem": "198. House Robber",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/house-robber/"
+}, {
+  "id": 30,
+  "topic": "Dynamic Programming: 1D",
+  "subPattern": "State Transition",
+  "tier": "core",
+  "problem": "300. Longest Increasing Subsequence",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/longest-increasing-subsequence/"
+}, {
+  "id": 31,
+  "topic": "Dynamic Programming: 1D",
+  "subPattern": "String Partitioning",
+  "tier": "core",
+  "problem": "139. Word Break",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/word-break/"
+}, {
+  "id": 32,
+  "topic": "Dynamic Programming: 1D",
+  "subPattern": "String Partitioning",
+  "tier": "core",
+  "problem": "91. Decode Ways",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/decode-ways/"
+}, {
+  "id": 33,
+  "topic": "Dynamic Programming: 2D",
+  "subPattern": "Grid Traversal",
+  "tier": "core",
+  "problem": "62. Unique Paths",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/unique-paths/"
+}, {
+  "id": 34,
+  "topic": "Dynamic Programming: 2D",
+  "subPattern": "Grid Traversal",
+  "tier": "core",
+  "problem": "64. Minimum Path Sum",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/minimum-path-sum/"
+}, {
+  "id": 35,
+  "topic": "Dynamic Programming: 2D",
+  "subPattern": "String Matching DP",
+  "tier": "core",
+  "problem": "1143. Longest Common Subsequence",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/longest-common-subsequence/"
+}, {
+  "id": 36,
+  "topic": "Dynamic Programming: 2D",
+  "subPattern": "String Matching DP",
+  "tier": "core",
+  "problem": "72. Edit Distance",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/edit-distance/"
+}, {
+  "id": 37,
+  "topic": "Advanced Graphs",
+  "subPattern": "Dijkstra's Algorithm",
+  "tier": "core",
+  "problem": "743. Network Delay Time",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/network-delay-time/"
+}, {
+  "id": 38,
+  "topic": "Advanced Graphs",
+  "subPattern": "Dijkstra's Algorithm",
+  "tier": "core",
+  "problem": "1631. Path With Minimum Effort",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/path-with-minimum-effort/"
+}, {
+  "id": 39,
+  "topic": "Graphs: Topo Sort",
+  "subPattern": "Kahn's Algorithm",
+  "tier": "core",
+  "problem": "207. Course Schedule",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/course-schedule/"
+}, {
+  "id": 40,
+  "topic": "Graphs: Topo Sort",
+  "subPattern": "Kahn's Algorithm",
+  "tier": "core",
+  "problem": "210. Course Schedule II",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/course-schedule-ii/"
+}, {
+  "id": 41,
+  "topic": "Disjoint Set Union (DSU)",
+  "subPattern": "Cycle Detection",
+  "tier": "core",
+  "problem": "684. Redundant Connection",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/redundant-connection/"
+}, {
+  "id": 42,
+  "topic": "Disjoint Set Union (DSU)",
+  "subPattern": "Cycle Detection",
+  "tier": "core",
+  "problem": "547. Number of Provinces",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/number-of-provinces/"
+}, {
+  "id": 43,
+  "topic": "Disjoint Set Union (DSU)",
+  "subPattern": "Path Compression & Rank",
+  "tier": "core",
+  "problem": "721. Accounts Merge",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/accounts-merge/"
+}, {
+  "id": 44,
+  "topic": "Disjoint Set Union (DSU)",
+  "subPattern": "Path Compression & Rank",
+  "tier": "core",
+  "problem": "1319. Number of Operations to Make Network Connected",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/number-of-operations-to-make-network-connected/"
+}, {
+  "id": 45,
+  "topic": "Trie (Prefix Tree)",
+  "subPattern": "Basic Implementation",
+  "tier": "core",
+  "problem": "208. Implement Trie (Prefix Tree)",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/implement-trie-prefix-tree/"
+}, {
+  "id": 46,
+  "topic": "Trie (Prefix Tree)",
+  "subPattern": "Basic Implementation",
+  "tier": "core",
+  "problem": "211. Design Add and Search Words Data Structure",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/design-add-and-search-words-data-structure/"
+}, {
+  "id": 47,
+  "topic": "Trie (Prefix Tree)",
+  "subPattern": "Trie + DFS (Backtracking)",
+  "tier": "core",
+  "problem": "212. Word Search II",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/word-search-ii/"
+}, {
+  "id": 48,
+  "topic": "Heaps & Priority Queues",
+  "subPattern": "Top K Elements",
+  "tier": "core",
+  "problem": "215. Kth Largest Element in an Array",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/kth-largest-element-in-an-array/"
+}, {
+  "id": 49,
+  "topic": "Heaps & Priority Queues",
+  "subPattern": "Top K Elements",
+  "tier": "core",
+  "problem": "347. Top K Frequent Elements",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/top-k-frequent-elements/"
+}, {
+  "id": 50,
+  "topic": "Heaps & Priority Queues",
+  "subPattern": "Streaming Data",
+  "tier": "core",
+  "problem": "703. Kth Largest Element in a Stream",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/kth-largest-element-in-a-stream/"
+}, {
+  "id": 51,
+  "topic": "Heaps & Priority Queues",
+  "subPattern": "Streaming Data",
+  "tier": "core",
+  "problem": "295. Find Median from Data Stream",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/find-median-from-data-stream/"
+}, {
+  "id": 52,
+  "topic": "Backtracking",
+  "subPattern": "Permutations/Combinations",
+  "tier": "core",
+  "problem": "46. Permutations",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/permutations/"
+}, {
+  "id": 53,
+  "topic": "Backtracking",
+  "subPattern": "Permutations/Combinations",
+  "tier": "core",
+  "problem": "78. Subsets",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/subsets/"
+}, {
+  "id": 54,
+  "topic": "Backtracking",
+  "subPattern": "Constraint Satisfaction",
+  "tier": "core",
+  "problem": "51. N-Queens",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/n-queens/"
+}, {
+  "id": 55,
+  "topic": "Backtracking",
+  "subPattern": "Constraint Satisfaction",
+  "tier": "core",
+  "problem": "37. Sudoku Solver",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/sudoku-solver/"
+}, {
+  "id": 56,
+  "topic": "Bit Manipulation",
+  "subPattern": "Basic XOR Properties",
+  "tier": "core",
+  "problem": "136. Single Number",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/single-number/"
+}, {
+  "id": 57,
+  "topic": "Bit Manipulation",
+  "subPattern": "Basic XOR Properties",
+  "tier": "core",
+  "problem": "191. Number of 1 Bits",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/number-of-1-bits/"
+}, {
+  "id": 58,
+  "topic": "Bit Manipulation",
+  "subPattern": "Basic XOR Properties",
+  "tier": "core",
+  "problem": "371. Sum of Two Integers",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/sum-of-two-integers/"
+}, {
+  "id": 59,
+  "topic": "Intervals & Line Sweep",
+  "subPattern": "Merging Intervals",
+  "tier": "core",
+  "problem": "56. Merge Intervals",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/merge-intervals/"
+}, {
+  "id": 60,
+  "topic": "Intervals & Line Sweep",
+  "subPattern": "Merging Intervals",
+  "tier": "core",
+  "problem": "57. Insert Interval",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/insert-interval/"
+}, {
+  "id": 61,
+  "topic": "Intervals & Line Sweep",
+  "subPattern": "Overlap Counting",
+  "tier": "core",
+  "problem": "253. Meeting Rooms II",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/meeting-rooms-ii/"
+}, {
+  "id": 62,
+  "topic": "Intervals & Line Sweep",
+  "subPattern": "Overlap Counting",
+  "tier": "core",
+  "problem": "1094. Car Pooling",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/car-pooling/"
+}, {
+  "id": 63,
+  "topic": "Greedy Algorithms",
+  "subPattern": "Interval Scheduling",
+  "tier": "core",
+  "problem": "435. Non-overlapping Intervals",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/non-overlapping-intervals/"
+}, {
+  "id": 64,
+  "topic": "Greedy Algorithms",
+  "subPattern": "Priority Queue + Greedy",
+  "tier": "core",
+  "problem": "767. Reorganize String",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/reorganize-string/"
+}, {
+  "id": 65,
+  "topic": "Mixed DP",
+  "subPattern": "Unbounded Knapsack",
+  "tier": "core",
+  "problem": "322. Coin Change",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/coin-change/"
+}, {
+  "id": 66,
+  "topic": "Advanced Graphs",
+  "subPattern": "Bellman-Ford / Floyd Warshall",
+  "tier": "advanced",
+  "problem": "787. Cheapest Flights Within K Stops",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/cheapest-flights-within-k-stops/"
+}, {
+  "id": 67,
+  "topic": "Advanced Graphs",
+  "subPattern": "Bellman-Ford / Floyd Warshall",
+  "tier": "advanced",
+  "problem": "1334. Find the City With the Smallest Number of Neighbors at a Threshold Distance",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/find-the-city-with-the-smallest-number-of-neighbors-at-a-threshold-distance/"
+}, {
+  "id": 68,
+  "topic": "DP: Intervals",
+  "subPattern": "Game Theory / Subarray Collapse",
+  "tier": "advanced",
+  "problem": "486. Predict the Winner",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/predict-the-winner/"
+}, {
+  "id": 69,
+  "topic": "DP: Intervals",
+  "subPattern": "Game Theory / Subarray Collapse",
+  "tier": "advanced",
+  "problem": "312. Burst Balloons",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/burst-balloons/"
+}, {
+  "id": 70,
+  "topic": "Advanced Trees",
+  "subPattern": "LCA & Diameter (extended)",
+  "tier": "advanced",
+  "problem": "1483. Kth Ancestor of a Tree Node",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/kth-ancestor-of-a-tree-node/"
+}, {
+  "id": 71,
+  "topic": "Advanced Trees",
+  "subPattern": "LCA & Diameter (extended)",
+  "tier": "advanced",
+  "problem": "863. All Nodes Distance K in Binary Tree",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/all-nodes-distance-k-in-binary-tree/"
+}, {
+  "id": 72,
+  "topic": "String Algorithms",
+  "subPattern": "KMP - LPS Array",
+  "tier": "advanced",
+  "problem": "28. Find the Index of the First Occurrence in a String",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/find-the-index-of-the-first-occurrence-in-a-string/"
+}, {
+  "id": 73,
+  "topic": "String Algorithms",
+  "subPattern": "KMP - LPS Array",
+  "tier": "advanced",
+  "problem": "459. Repeated Substring Pattern",
+  "difficulty": "Easy",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/repeated-substring-pattern/"
+}, {
+  "id": 74,
+  "topic": "String Algorithms",
+  "subPattern": "KMP Application",
+  "tier": "advanced",
+  "problem": "214. Shortest Palindrome",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/shortest-palindrome/"
+}, {
+  "id": 75,
+  "topic": "String Algorithms",
+  "subPattern": "KMP Application",
+  "tier": "advanced",
+  "problem": "1392. Longest Happy Prefix",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/longest-happy-prefix/"
+}, {
+  "id": 76,
+  "topic": "String Manipulation",
+  "subPattern": "Rolling Hash / Suffix Intro",
+  "tier": "advanced",
+  "problem": "1044. Longest Duplicate Substring",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/longest-duplicate-substring/"
+}, {
+  "id": 77,
+  "topic": "Trie (Advanced)",
+  "subPattern": "Bitwise Trie",
+  "tier": "advanced",
+  "problem": "421. Maximum XOR of Two Numbers in an Array",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/maximum-xor-of-two-numbers-in-an-array/"
+}, {
+  "id": 78,
+  "topic": "Advanced DP",
+  "subPattern": "DP with Bitmask",
+  "tier": "advanced",
+  "problem": "847. Shortest Path Visiting All Nodes",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/shortest-path-visiting-all-nodes/"
+}, {
+  "id": 79,
+  "topic": "Advanced DP",
+  "subPattern": "DP with Bitmask",
+  "tier": "advanced",
+  "problem": "1125. Smallest Sufficient Team",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/smallest-sufficient-team/"
+}, {
+  "id": 80,
+  "topic": "Advanced Graphs",
+  "subPattern": "Bridges & Articulation Points",
+  "tier": "advanced",
+  "problem": "1192. Critical Connections in a Network",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/critical-connections-in-a-network/"
+}, {
+  "id": 81,
+  "topic": "Advanced Graphs",
+  "subPattern": "Strongly Connected Components",
+  "tier": "advanced",
+  "problem": "Strongly Connected Components (Kosaraju's Algo)",
+  "difficulty": "Medium",
+  "platform": "GeeksforGeeks",
+  "url": "https://www.geeksforgeeks.org/problems/strongly-connected-components-kosarajus-algo/1/"
+}, {
+  "id": 82,
+  "topic": "Advanced Graphs",
+  "subPattern": "Strongly Connected Components",
+  "tier": "advanced",
+  "problem": "2360. Longest Cycle in a Graph",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/longest-cycle-in-a-graph/"
+}, {
+  "id": 83,
+  "topic": "DP on Trees",
+  "subPattern": "In-out DP / Path Counting",
+  "tier": "advanced",
+  "problem": "337. House Robber III",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/house-robber-iii/"
+}, {
+  "id": 84,
+  "topic": "DP on Trees",
+  "subPattern": "In-out DP / Path Counting",
+  "tier": "advanced",
+  "problem": "979. Distribute Coins in Binary Tree",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/distribute-coins-in-binary-tree/"
+}, {
+  "id": 85,
+  "topic": "Math & Combinatorics",
+  "subPattern": "Modular Arithmetic / Sieve",
+  "tier": "advanced",
+  "problem": "204. Count Primes",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/count-primes/"
+}, {
+  "id": 86,
+  "topic": "Math & Combinatorics",
+  "subPattern": "Modular Arithmetic / Sieve",
+  "tier": "advanced",
+  "problem": "1922. Count Good Numbers",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/count-good-numbers/"
+}, {
+  "id": 87,
+  "topic": "Segment Trees",
+  "subPattern": "Point Updates / Range Queries",
+  "tier": "advanced",
+  "problem": "307. Range Sum Query - Mutable",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/range-sum-query-mutable/"
+}, {
+  "id": 88,
+  "topic": "Segment Trees",
+  "subPattern": "Point Updates / Range Queries",
+  "tier": "advanced",
+  "problem": "315. Count of Smaller Numbers After Self",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/count-of-smaller-numbers-after-self/"
+}, {
+  "id": 89,
+  "topic": "Segment Trees",
+  "subPattern": "Lazy Propagation",
+  "tier": "advanced",
+  "problem": "699. Falling Squares",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/falling-squares/"
+}, {
+  "id": 90,
+  "topic": "Advanced Trees",
+  "subPattern": "Fenwick Tree (BIT)",
+  "tier": "advanced",
+  "problem": "1649. Create Sorted Array through Instructions",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/create-sorted-array-through-instructions/"
+}, {
+  "id": 91,
+  "topic": "Advanced DSU",
+  "subPattern": "Union by Rank / Bipartite",
+  "tier": "advanced",
+  "problem": "990. Satisfiability of Equality Equations",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/satisfiability-of-equality-equations/"
+}, {
+  "id": 92,
+  "topic": "Advanced DSU",
+  "subPattern": "Union by Rank / Bipartite",
+  "tier": "advanced",
+  "problem": "1584. Min Cost to Connect All Points",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/min-cost-to-connect-all-points/"
+}, {
+  "id": 93,
+  "topic": "Mixed DP",
+  "subPattern": "Digit DP",
+  "tier": "advanced",
+  "problem": "233. Number of Digit One",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/number-of-digit-one/"
+}, {
+  "id": 94,
+  "topic": "Mixed DP",
+  "subPattern": "Digit DP",
+  "tier": "advanced",
+  "problem": "1012. Numbers With Repeated Digits",
+  "difficulty": "Hard",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/numbers-with-repeated-digits/"
+}, {
+  "id": 95,
+  "topic": "Advanced Math",
+  "subPattern": "Inclusion-Exclusion",
+  "tier": "advanced",
+  "problem": "1201. Ugly Number III",
+  "difficulty": "Medium",
+  "platform": "LeetCode",
+  "url": "https://leetcode.com/problems/ugly-number-iii/"
+}, {
+  "id": 96,
+  "topic": "Advanced Graph Flows",
+  "subPattern": "Min-Cut / Max-Flow Intro",
+  "tier": "advanced",
+  "problem": "Maximum flow from source to sink using Ford-Fulkerson",
+  "difficulty": "Hard",
+  "platform": "GeeksforGeeks",
+  "url": "https://www.geeksforgeeks.org/maximum-flow-problem-introduction/"
+}, {
+  "id": 97,
+  "topic": "DP Optimization",
+  "subPattern": "Convex Hull Trick Intro",
+  "tier": "advanced",
+  "problem": "Convex Hull Trick DP Optimization",
+  "difficulty": "Hard",
+  "platform": "GeeksforGeeks",
+  "url": "https://www.geeksforgeeks.org/convex-hull-trick-set-1-introduction/"
 }];
+const SUBPATTERN_ORDER = [{
+  "topic": "Sliding Window",
+  "subPattern": "Fixed Window",
+  "tier": "core"
+}, {
+  "topic": "Sliding Window",
+  "subPattern": "Variable Window",
+  "tier": "core"
+}, {
+  "topic": "Sliding Window",
+  "subPattern": "Variable Window Optimized",
+  "tier": "core"
+}, {
+  "topic": "Two Pointers",
+  "subPattern": "Opposite Direction",
+  "tier": "core"
+}, {
+  "topic": "Two Pointers",
+  "subPattern": "Comparing Arrays",
+  "tier": "core"
+}, {
+  "topic": "Trees: DFS",
+  "subPattern": "Bottom-Up Recursion",
+  "tier": "core"
+}, {
+  "topic": "Trees: DFS",
+  "subPattern": "Global State Tracking",
+  "tier": "core"
+}, {
+  "topic": "Monotonic Stack",
+  "subPattern": "Next Greater Element",
+  "tier": "core"
+}, {
+  "topic": "Monotonic Stack",
+  "subPattern": "Stack with Indices",
+  "tier": "core"
+}, {
+  "topic": "Graphs: BFS",
+  "subPattern": "Shortest Path (Unweighted)",
+  "tier": "core"
+}, {
+  "topic": "Graphs: BFS",
+  "subPattern": "Multi-source BFS",
+  "tier": "core"
+}, {
+  "topic": "Binary Search on Answer",
+  "subPattern": "Finding Min Max",
+  "tier": "core"
+}, {
+  "topic": "Binary Search on Answer",
+  "subPattern": "Aggressive Placement",
+  "tier": "core"
+}, {
+  "topic": "Dynamic Programming: 1D",
+  "subPattern": "State Transition",
+  "tier": "core"
+}, {
+  "topic": "Dynamic Programming: 1D",
+  "subPattern": "String Partitioning",
+  "tier": "core"
+}, {
+  "topic": "Dynamic Programming: 2D",
+  "subPattern": "Grid Traversal",
+  "tier": "core"
+}, {
+  "topic": "Dynamic Programming: 2D",
+  "subPattern": "String Matching DP",
+  "tier": "core"
+}, {
+  "topic": "Advanced Graphs",
+  "subPattern": "Dijkstra's Algorithm",
+  "tier": "core"
+}, {
+  "topic": "Graphs: Topo Sort",
+  "subPattern": "Kahn's Algorithm",
+  "tier": "core"
+}, {
+  "topic": "Disjoint Set Union (DSU)",
+  "subPattern": "Cycle Detection",
+  "tier": "core"
+}, {
+  "topic": "Disjoint Set Union (DSU)",
+  "subPattern": "Path Compression & Rank",
+  "tier": "core"
+}, {
+  "topic": "Trie (Prefix Tree)",
+  "subPattern": "Basic Implementation",
+  "tier": "core"
+}, {
+  "topic": "Trie (Prefix Tree)",
+  "subPattern": "Trie + DFS (Backtracking)",
+  "tier": "core"
+}, {
+  "topic": "Heaps & Priority Queues",
+  "subPattern": "Top K Elements",
+  "tier": "core"
+}, {
+  "topic": "Heaps & Priority Queues",
+  "subPattern": "Streaming Data",
+  "tier": "core"
+}, {
+  "topic": "Backtracking",
+  "subPattern": "Permutations/Combinations",
+  "tier": "core"
+}, {
+  "topic": "Backtracking",
+  "subPattern": "Constraint Satisfaction",
+  "tier": "core"
+}, {
+  "topic": "Bit Manipulation",
+  "subPattern": "Basic XOR Properties",
+  "tier": "core"
+}, {
+  "topic": "Intervals & Line Sweep",
+  "subPattern": "Merging Intervals",
+  "tier": "core"
+}, {
+  "topic": "Intervals & Line Sweep",
+  "subPattern": "Overlap Counting",
+  "tier": "core"
+}, {
+  "topic": "Greedy Algorithms",
+  "subPattern": "Interval Scheduling",
+  "tier": "core"
+}, {
+  "topic": "Greedy Algorithms",
+  "subPattern": "Priority Queue + Greedy",
+  "tier": "core"
+}, {
+  "topic": "Mixed DP",
+  "subPattern": "Unbounded Knapsack",
+  "tier": "core"
+}, {
+  "topic": "Advanced Graphs",
+  "subPattern": "Bellman-Ford / Floyd Warshall",
+  "tier": "advanced"
+}, {
+  "topic": "DP: Intervals",
+  "subPattern": "Game Theory / Subarray Collapse",
+  "tier": "advanced"
+}, {
+  "topic": "Advanced Trees",
+  "subPattern": "LCA & Diameter (extended)",
+  "tier": "advanced"
+}, {
+  "topic": "String Algorithms",
+  "subPattern": "KMP - LPS Array",
+  "tier": "advanced"
+}, {
+  "topic": "String Algorithms",
+  "subPattern": "KMP Application",
+  "tier": "advanced"
+}, {
+  "topic": "String Manipulation",
+  "subPattern": "Rolling Hash / Suffix Intro",
+  "tier": "advanced"
+}, {
+  "topic": "Trie (Advanced)",
+  "subPattern": "Bitwise Trie",
+  "tier": "advanced"
+}, {
+  "topic": "Advanced DP",
+  "subPattern": "DP with Bitmask",
+  "tier": "advanced"
+}, {
+  "topic": "Advanced Graphs",
+  "subPattern": "Bridges & Articulation Points",
+  "tier": "advanced"
+}, {
+  "topic": "Advanced Graphs",
+  "subPattern": "Strongly Connected Components",
+  "tier": "advanced"
+}, {
+  "topic": "DP on Trees",
+  "subPattern": "In-out DP / Path Counting",
+  "tier": "advanced"
+}, {
+  "topic": "Math & Combinatorics",
+  "subPattern": "Modular Arithmetic / Sieve",
+  "tier": "advanced"
+}, {
+  "topic": "Segment Trees",
+  "subPattern": "Point Updates / Range Queries",
+  "tier": "advanced"
+}, {
+  "topic": "Segment Trees",
+  "subPattern": "Lazy Propagation",
+  "tier": "advanced"
+}, {
+  "topic": "Advanced Trees",
+  "subPattern": "Fenwick Tree (BIT)",
+  "tier": "advanced"
+}, {
+  "topic": "Advanced DSU",
+  "subPattern": "Union by Rank / Bipartite",
+  "tier": "advanced"
+}, {
+  "topic": "Mixed DP",
+  "subPattern": "Digit DP",
+  "tier": "advanced"
+}, {
+  "topic": "Advanced Math",
+  "subPattern": "Inclusion-Exclusion",
+  "tier": "advanced"
+}, {
+  "topic": "Advanced Graph Flows",
+  "subPattern": "Min-Cut / Max-Flow Intro",
+  "tier": "advanced"
+}, {
+  "topic": "DP Optimization",
+  "subPattern": "Convex Hull Trick Intro",
+  "tier": "advanced"
+}];
+const TIER_COLORS = {
+  core: '#4DD0E1',
+  advanced: '#E8617A'
+};
+const DIFFICULTY_COLORS = {
+  Easy: '#6DBE8C',
+  Medium: '#F0B44E',
+  Hard: '#E8617A'
+};
+
+// Spaced-repetition gap schedule: after the Nth time a problem is marked
+// done, wait this many plan-days before it's eligible to resurface as a
+// review item. Gaps grow the more times it's been reviewed (classic
+// Leitner-style curve), capped at the last value.
+const REVIEW_GAPS = [3, 7, 14, 30];
+function reviewGapFor(timesDone) {
+  const idx = Math.min(timesDone - 1, REVIEW_GAPS.length - 1);
+  return REVIEW_GAPS[Math.max(0, idx)];
+}
+
+// Short description + resource links per topic (not exact problem
+// solutions) -- shown when the user taps the (i) icon next to a pattern
+// title, so they can learn the underlying technique before attempting it.
+const TOPIC_INFO = [{
+  "topic": "Sliding Window",
+  "description": "Maintain a contiguous window over an array/string that expands and shrinks based on a condition, avoiding recomputation from scratch on every step.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Sliding%20Window%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Sliding%20Window%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Two Pointers",
+  "description": "Use two indices moving through a sequence (from ends inward, or both forward) to avoid nested loops and cut brute force down to linear time.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Two%20Pointers%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Two%20Pointers%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Trees: DFS",
+  "description": "Traverse a tree recursively, computing results bottom-up from children to parent, or tracking state top-down as you descend.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Trees%3A%20DFS%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Trees%3A%20DFS%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Monotonic Stack",
+  "description": "Keep a stack that's always increasing or decreasing, popping elements as needed to efficiently find the next/previous greater or smaller element.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Monotonic%20Stack%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Monotonic%20Stack%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Graphs: BFS",
+  "description": "Explore a graph level by level using a queue -- the go-to approach for shortest paths in unweighted graphs.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Graphs%3A%20BFS%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Graphs%3A%20BFS%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Binary Search on Answer",
+  "description": "Instead of searching an array, binary search over a range of possible answers, checking feasibility at each midpoint.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Binary%20Search%20on%20Answer%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Binary%20Search%20on%20Answer%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Dynamic Programming: 1D",
+  "description": "Break a problem into overlapping subproblems indexed by a single variable, storing results to avoid recomputation.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Dynamic%20Programming%3A%201D%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Dynamic%20Programming%3A%201D%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Dynamic Programming: 2D",
+  "description": "Extend DP to two dimensions (e.g. two strings, or a grid), building a table where each cell depends on previously computed cells.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Dynamic%20Programming%3A%202D%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Dynamic%20Programming%3A%202D%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Advanced Graphs",
+  "description": "Shortest-path algorithms (Dijkstra, Bellman-Ford, Floyd-Warshall) for weighted graphs, beyond simple BFS.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Advanced%20Graphs%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Advanced%20Graphs%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Graphs: Topo Sort",
+  "description": "Order nodes in a DAG so every edge points forward -- essential for dependency resolution problems (course schedules, build systems).",
+  "videoUrl": "https://www.youtube.com/results?search_query=Graphs%3A%20Topo%20Sort%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Graphs%3A%20Topo%20Sort%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Disjoint Set Union (DSU)",
+  "description": "Union-Find data structure for efficiently tracking and merging connected groups, with path compression for near-constant time operations.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Disjoint%20Set%20Union%20%28DSU%29%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Disjoint%20Set%20Union%20%28DSU%29%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Trie (Prefix Tree)",
+  "description": "A tree structure for storing strings by shared prefixes, enabling fast prefix search and autocomplete-style queries.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Trie%20%28Prefix%20Tree%29%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Trie%20%28Prefix%20Tree%29%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Heaps & Priority Queues",
+  "description": "A structure that always gives you the min/max element in O(log n), key for top-K problems and streaming data.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Heaps%20%26%20Priority%20Queues%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Heaps%20%26%20Priority%20Queues%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Backtracking",
+  "description": "Systematically explore all candidate solutions, abandoning ('backtracking' from) a path as soon as it can't lead to a valid answer.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Backtracking%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Backtracking%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Bit Manipulation",
+  "description": "Use bitwise operators (XOR, AND, shifts) to solve problems with better time/space complexity than obvious approaches.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Bit%20Manipulation%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Bit%20Manipulation%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Intervals & Line Sweep",
+  "description": "Sort intervals and sweep across them to merge overlaps, count concurrent events, or detect conflicts.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Intervals%20%26%20Line%20Sweep%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Intervals%20%26%20Line%20Sweep%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Greedy Algorithms",
+  "description": "Make the locally optimal choice at each step, provable to produce a globally optimal result for certain problem structures.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Greedy%20Algorithms%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Greedy%20Algorithms%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Mixed DP",
+  "description": "DP variants that don't fit neatly into 1D/2D grid patterns -- unbounded knapsack, digit DP, and similar specialized formulations.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Mixed%20DP%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Mixed%20DP%20algorithm%20pattern%20explained"
+}, {
+  "topic": "DP: Intervals",
+  "description": "DP where the state is a sub-range [i, j] of the input, common in game-theory and merge/partition style problems.",
+  "videoUrl": "https://www.youtube.com/results?search_query=DP%3A%20Intervals%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=DP%3A%20Intervals%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Advanced Trees",
+  "description": "Tree techniques beyond basic traversal -- binary lifting for ancestor queries, Fenwick trees for prefix aggregates.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Advanced%20Trees%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Advanced%20Trees%20algorithm%20pattern%20explained"
+}, {
+  "topic": "String Algorithms",
+  "description": "Pattern-matching algorithms like KMP that avoid re-scanning text by precomputing failure functions.",
+  "videoUrl": "https://www.youtube.com/results?search_query=String%20Algorithms%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=String%20Algorithms%20algorithm%20pattern%20explained"
+}, {
+  "topic": "String Manipulation",
+  "description": "Hashing and comparison techniques (rolling hash, suffix structures) for efficient substring problems.",
+  "videoUrl": "https://www.youtube.com/results?search_query=String%20Manipulation%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=String%20Manipulation%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Trie (Advanced)",
+  "description": "Specialized tries (e.g. a bitwise trie over binary representations) for XOR and numeric prefix problems.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Trie%20%28Advanced%29%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Trie%20%28Advanced%29%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Advanced DP",
+  "description": "DP over subsets using bitmasks to represent state -- useful when 'which items have I used' matters more than a simple count.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Advanced%20DP%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Advanced%20DP%20algorithm%20pattern%20explained"
+}, {
+  "topic": "DP on Trees",
+  "description": "DP where each node's answer depends on combining results from its children -- common for subtree aggregation and path problems.",
+  "videoUrl": "https://www.youtube.com/results?search_query=DP%20on%20Trees%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=DP%20on%20Trees%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Math & Combinatorics",
+  "description": "Modular arithmetic, sieves, and counting techniques that show up in problems disguised as pure math.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Math%20%26%20Combinatorics%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Math%20%26%20Combinatorics%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Segment Trees",
+  "description": "A tree structure supporting range queries and point/range updates in O(log n), more general than prefix sums.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Segment%20Trees%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Segment%20Trees%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Advanced DSU",
+  "description": "DSU extended with rank/size heuristics and parity tracking, useful for bipartiteness and weighted union problems.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Advanced%20DSU%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Advanced%20DSU%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Advanced Math",
+  "description": "Inclusion-exclusion and related counting principles for problems involving overlapping conditions.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Advanced%20Math%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Advanced%20Math%20algorithm%20pattern%20explained"
+}, {
+  "topic": "Advanced Graph Flows",
+  "description": "Max-flow/min-cut algorithms for problems framed as capacity-constrained networks -- rare in interviews, common in competitive programming.",
+  "videoUrl": "https://www.youtube.com/results?search_query=Advanced%20Graph%20Flows%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=Advanced%20Graph%20Flows%20algorithm%20pattern%20explained"
+}, {
+  "topic": "DP Optimization",
+  "description": "Techniques (like the convex hull trick) for speeding up DP transitions that would otherwise be too slow -- competitive-programming territory.",
+  "videoUrl": "https://www.youtube.com/results?search_query=DP%20Optimization%20pattern%20tutorial%20dsa",
+  "articleUrl": "https://www.google.com/search?q=DP%20Optimization%20algorithm%20pattern%20explained"
+}];
+function getTopicInfo(topic) {
+  return TOPIC_INFO.find(t => t.topic === topic) || null;
+}
 const STORAGE_KEY = 'interview-prep-tracker-v1';
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -173,39 +1420,53 @@ function loadDefault() {
     done: 0,
     target: 15
   }));
-  const dsaQuestions = {};
-  DSA_QUESTIONS.forEach(g => {
-    dsaQuestions[g.pattern] = g.questions.map(() => false);
-  });
-  const algoChecklist = {};
-  ALGO_CHECKLIST.forEach(g => {
-    algoChecklist[g.pattern] = g.techniques.map(() => false);
-  });
+  const srs = {}; // { [problemId]: { timesDone: number, lastDoneDay: number } }
+  const problemNotes = {}; // { [problemId]: string }
   const dailyPlan = {
     day: 1,
     streak: 0,
     lastCompletedDate: null,
-    todaysQuestions: null
+    todaysSelection: null
   };
+  const activityLog = {}; // { [dateStr]: count } -- calendar-date activity for the heatmap
   return {
     checklist,
     dsa,
-    dsaQuestions,
-    algoChecklist,
+    srs,
+    problemNotes,
     dailyPlan,
-    dsaQuestionNotes: {},
-    notes: ''
+    notesList: [],
+    activityLog
   };
 }
-function getDailyTarget(day) {
-  if (day <= 7) return 2;
-  if (day <= 14) return 3;
-  if (day <= 21) return 4;
-  return 5;
-}
-function getPatternForDay(day) {
-  const idx = (day - 1) % DSA_QUESTIONS.length;
-  return DSA_QUESTIONS[idx];
+
+// Builds today's list: unseen problems from today's rotating sub-pattern
+// ("new"), plus previously-done problems whose spaced-repetition gap has
+// elapsed ("review"). This is recomputed live from srs state rather than
+// frozen, since spaced repetition is inherently dynamic -- checking things
+// off today shouldn't hide already-due reviews for other patterns.
+function getDailySelection(day, srs) {
+  const subIdx = (day - 1) % SUBPATTERN_ORDER.length;
+  const cycle = Math.floor((day - 1) / SUBPATTERN_ORDER.length) + 1;
+  const sub = SUBPATTERN_ORDER[subIdx];
+  const subEntries = PROBLEM_BANK.filter(e => e.topic === sub.topic && e.subPattern === sub.subPattern);
+  const newItems = subEntries.filter(e => !srs[e.id]);
+  const review = PROBLEM_BANK.filter(e => srs[e.id] && !newItems.includes(e)).map(e => {
+    const s = srs[e.id];
+    const dueInDays = s.lastDoneDay + reviewGapFor(s.timesDone) - day;
+    return {
+      entry: e,
+      dueInDays
+    };
+  }).filter(x => x.dueInDays <= 0).sort((a, b) => a.dueInDays - b.dueInDays).slice(0, 3).map(x => x.entry);
+  return {
+    topic: sub.topic,
+    subPattern: sub.subPattern,
+    tier: sub.tier,
+    cycle,
+    newItems,
+    review
+  };
 }
 
 // Returns a { streak, lastCompletedDate } patch if today hasn't been logged
@@ -220,43 +1481,16 @@ function computeStreakPatch(dailyPlan) {
     lastCompletedDate: today
   };
 }
-
-function QuestionDetails({ question, checked, notes, onNotesChange }) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: styles.questionBody
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.questionTitleRow
-  }, question.url ? /*#__PURE__*/React.createElement("a", {
-    href: question.url,
-    target: "_blank",
-    rel: "noopener noreferrer",
-    style: {
-      ...styles.questionLink,
-      textDecoration: checked ? 'line-through' : 'none',
-      opacity: checked ? 0.55 : 1
-    }
-  }, question.title) : /*#__PURE__*/React.createElement("span", {
-    style: {
-      ...styles.checkText,
-      textDecoration: checked ? 'line-through' : 'none',
-      opacity: checked ? 0.55 : 1
-    }
-  }, question.title), question.platform && /*#__PURE__*/React.createElement("span", {
-    style: styles.platformBadge
-  }, question.platform)), /*#__PURE__*/React.createElement("textarea", {
-    value: notes,
-    onChange: e => onNotesChange(e.target.value),
-    placeholder: "Notes / approach / mistakes...",
-    style: styles.questionNotes
-  }));
-}
 function PrepTracker() {
   const [data, setData] = useState(loadDefault());
   const [loaded, setLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState('daily');
   const [saveState, setSaveState] = useState('idle');
   const [collapsed, setCollapsed] = useState({});
-  const [dsaFilterPattern, setDsaFilterPattern] = useState('all');
+  const [filterPriority, setFilterPriority] = useState('all');
+  const [filterText, setFilterText] = useState('');
+  const [openInfoTopic, setOpenInfoTopic] = useState(null);
+  const [detailModal, setDetailModal] = useState(null); // entry id or null
   const [hideCompleted, setHideCompleted] = useState(false);
   const toggleCollapsed = pattern => {
     setCollapsed(prev => ({
@@ -271,29 +1505,44 @@ function PrepTracker() {
         if (res && res.value) {
           const saved = JSON.parse(res.value);
           const def = loadDefault();
+          const {
+            todaysQuestions,
+            ...restDailyPlan
+          } = saved.dailyPlan || {};
+          // Migrate the old single free-text "notes" field (if present)
+          // into the new multi-entry notesList, so nobody loses what
+          // they'd already written.
+          let notesList = saved.notesList || def.notesList;
+          if (!saved.notesList && saved.notes && saved.notes.trim()) {
+            notesList = [{
+              id: Date.now(),
+              text: saved.notes,
+              createdAt: new Date().toISOString()
+            }];
+          }
           setData({
             checklist: {
               ...def.checklist,
               ...saved.checklist
             },
             dsa: saved.dsa || def.dsa,
-            dsaQuestions: {
-              ...def.dsaQuestions,
-              ...saved.dsaQuestions
+            srs: {
+              ...def.srs,
+              ...(saved.srs || {})
             },
-            dsaQuestionNotes: {
-              ...def.dsaQuestionNotes,
-              ...(saved.dsaQuestionNotes || {})
-            },
-            algoChecklist: {
-              ...def.algoChecklist,
-              ...(saved.algoChecklist || {})
+            problemNotes: {
+              ...def.problemNotes,
+              ...(saved.problemNotes || {})
             },
             dailyPlan: {
               ...def.dailyPlan,
-              ...(saved.dailyPlan || {})
+              ...restDailyPlan
             },
-            notes: saved.notes || ''
+            notesList,
+            activityLog: {
+              ...def.activityLog,
+              ...(saved.activityLog || {})
+            }
           });
         }
       } catch (e) {
@@ -303,26 +1552,33 @@ function PrepTracker() {
       }
     })();
   }, []);
+
+  // Freeze today's selection (new + due reviews) once per plan day, so the
+  // checklist doesn't reshuffle mid-session as items get checked off --
+  // only the "next day" button regenerates it for the new day/pattern.
   useEffect(() => {
     if (!loaded) return;
     setData(prev => {
-      const group = getPatternForDay(prev.dailyPlan.day);
-      const target = getDailyTarget(prev.dailyPlan.day);
-      const existing = prev.dailyPlan.todaysQuestions;
-      if (existing && existing.day === prev.dailyPlan.day && existing.pattern === group.pattern) {
-        return prev;
-      }
-      const arr = prev.dsaQuestions[group.pattern] || [];
-      const indices = group.questions.map((_, idx) => idx).filter(idx => !arr[idx]).slice(0, target);
+      const {
+        day,
+        todaysSelection
+      } = prev.dailyPlan;
+      if (todaysSelection && todaysSelection.day === day) return prev;
+      const sel = getDailySelection(day, prev.srs);
+      const frozen = {
+        day,
+        topic: sel.topic,
+        subPattern: sel.subPattern,
+        tier: sel.tier,
+        cycle: sel.cycle,
+        newIds: sel.newItems.map(e => e.id),
+        reviewIds: sel.review.map(e => e.id)
+      };
       const next = {
         ...prev,
         dailyPlan: {
           ...prev.dailyPlan,
-          todaysQuestions: {
-            day: prev.dailyPlan.day,
-            pattern: group.pattern,
-            indices
-          }
+          todaysSelection: frozen
         }
       };
       persist(next);
@@ -330,17 +1586,19 @@ function PrepTracker() {
     });
   }, [loaded, data.dailyPlan.day]);
 
-  // Auto-log the streak the moment every problem in today's frozen set is
-  // checked off, so completing the checklist itself is what counts --
-  // pressing "next pattern" is only needed to advance to tomorrow's pattern.
+  // Auto-log the streak the moment every problem in today's frozen
+  // selection is checked off -- pressing "next day" is only needed to
+  // advance the rotation to tomorrow's pattern.
   useEffect(() => {
     if (!loaded) return;
     const {
-      todaysQuestions
+      todaysSelection,
+      day
     } = data.dailyPlan;
-    if (!todaysQuestions || todaysQuestions.indices.length === 0) return;
-    const arr = data.dsaQuestions[todaysQuestions.pattern] || [];
-    const allDone = todaysQuestions.indices.every(idx => arr[idx]);
+    if (!todaysSelection || todaysSelection.day !== day) return;
+    const allIds = [...todaysSelection.newIds, ...todaysSelection.reviewIds];
+    if (allIds.length === 0) return;
+    const allDone = allIds.every(id => data.srs[id] && data.srs[id].lastDoneDay === day);
     if (!allDone) return;
     const patch = computeStreakPatch(data.dailyPlan);
     if (!patch) return;
@@ -355,7 +1613,7 @@ function PrepTracker() {
       persist(next);
       return next;
     });
-  }, [loaded, data.dsaQuestions, data.dailyPlan.todaysQuestions, data.dailyPlan.lastCompletedDate]);
+  }, [loaded, data.srs, data.dailyPlan.todaysSelection, data.dailyPlan.day, data.dailyPlan.lastCompletedDate]);
   const persist = useCallback(async next => {
     setSaveState('saving');
     try {
@@ -380,32 +1638,61 @@ function PrepTracker() {
       return next;
     });
   };
-  const toggleDsaQuestion = (pattern, idx) => {
+
+  // Toggling marks a problem "done today" (advancing its spaced-repetition
+  // state) or un-marks it back to how it was before today's check. We only
+  // track a boolean-ish done-today state in the UI; the underlying srs
+  // record keeps timesDone/lastDoneDay for scheduling future reviews.
+  const toggleProblem = (entryId, day) => {
     setData(prev => {
+      const existing = prev.srs[entryId];
+      const doneToday = existing && existing.lastDoneDay === day;
+      let nextEntry;
+      const today = todayStr();
+      const nextActivityLog = {
+        ...prev.activityLog
+      };
+      if (doneToday) {
+        // Undo today's check -- step back one review cycle.
+        nextEntry = existing.timesDone <= 1 ? undefined : {
+          timesDone: existing.timesDone - 1,
+          lastDoneDay: existing.lastDoneDay
+        };
+        nextActivityLog[today] = Math.max(0, (nextActivityLog[today] || 0) - 1);
+        if (nextActivityLog[today] === 0) delete nextActivityLog[today];
+      } else {
+        nextEntry = {
+          timesDone: (existing ? existing.timesDone : 0) + 1,
+          lastDoneDay: day
+        };
+        nextActivityLog[today] = (nextActivityLog[today] || 0) + 1;
+      }
+      const nextSrs = {
+        ...prev.srs
+      };
+      if (nextEntry) nextSrs[entryId] = nextEntry;else delete nextSrs[entryId];
       const next = {
         ...prev,
-        dsaQuestions: {
-          ...prev.dsaQuestions
-        }
+        srs: nextSrs,
+        activityLog: nextActivityLog
       };
-      next.dsaQuestions[pattern] = [...prev.dsaQuestions[pattern]];
-      next.dsaQuestions[pattern][idx] = !next.dsaQuestions[pattern][idx];
       persist(next);
       return next;
     });
   };
-  const toggleAlgo = (pattern, idx) => {
+  const updateProblemNotes = (entryId, text) => {
+    setData(prev => ({
+      ...prev,
+      problemNotes: {
+        ...prev.problemNotes,
+        [entryId]: text
+      }
+    }));
+  };
+  const saveProblemNotes = entryId => {
     setData(prev => {
-      const next = {
-        ...prev,
-        algoChecklist: {
-          ...prev.algoChecklist
-        }
-      };
-      next.algoChecklist[pattern] = [...prev.algoChecklist[pattern]];
-      next.algoChecklist[pattern][idx] = !next.algoChecklist[pattern][idx];
-      persist(next);
-      return next;
+      persist(prev);
+      return prev;
     });
   };
   const markDayDone = () => {
@@ -417,7 +1704,7 @@ function PrepTracker() {
           ...prev.dailyPlan,
           ...patch,
           day: prev.dailyPlan.day + 1,
-          todaysQuestions: null
+          todaysSelection: null
         }
       };
       persist(next);
@@ -437,29 +1724,46 @@ function PrepTracker() {
       return next;
     });
   };
-  const updateDsaQuestionNotes = (questionId, val) => {
+  const addNote = () => {
     setData(prev => {
+      const entry = {
+        id: Date.now(),
+        text: '',
+        createdAt: new Date().toISOString()
+      };
       const next = {
         ...prev,
-        dsaQuestionNotes: {
-          ...(prev.dsaQuestionNotes || {}),
-          [questionId]: val
-        }
+        notesList: [entry, ...prev.notesList]
       };
       persist(next);
       return next;
     });
   };
-  const updateNotes = val => {
+  const updateNote = (id, text) => {
+    setData(prev => ({
+      ...prev,
+      notesList: prev.notesList.map(n => n.id === id ? {
+        ...n,
+        text
+      } : n)
+    }));
+  };
+  const saveNote = () => {
+    setData(prev => {
+      persist(prev);
+      return prev;
+    });
+  };
+  const deleteNote = id => {
     setData(prev => {
       const next = {
         ...prev,
-        notes: val
+        notesList: prev.notesList.filter(n => n.id !== id)
       };
+      persist(next);
       return next;
     });
   };
-  const saveNotes = () => persist(data);
   const exportBackup = () => {
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: 'application/json'
@@ -497,36 +1801,106 @@ function PrepTracker() {
       style: styles.loadingText
     }, "loading ledger…"));
   }
-  const topicProgress = topic => {
-    const arr = data.checklist[topic.id] || [];
-    const done = arr.filter(Boolean).length;
-    return {
-      done,
-      total: topic.items.length
-    };
-  };
-  const dsaDone = data.dsa.reduce((s, d) => s + d.done, 0);
-  const dsaTarget = data.dsa.reduce((s, d) => s + d.target, 0);
-  const overallDone = TOPICS.reduce((s, t) => s + topicProgress(t).done, 0) + dsaDone;
-  const overallTotal = TOPICS.reduce((s, t) => s + topicProgress(t).total, 0) + dsaTarget;
+  const overallDone = PROBLEM_BANK.filter(e => data.srs[e.id]).length;
+  const overallTotal = PROBLEM_BANK.length;
   const overallPct = Math.round(overallDone / overallTotal * 100);
   const {
     day,
     streak,
     lastCompletedDate,
-    todaysQuestions
+    todaysSelection
   } = data.dailyPlan;
-  const todaysGroup = getPatternForDay(day);
-  const dailyTarget = getDailyTarget(day);
-  const todaysArr = data.dsaQuestions[todaysGroup.pattern] || [];
-  const frozenIndices = todaysQuestions && todaysQuestions.day === day && todaysQuestions.pattern === todaysGroup.pattern ? todaysQuestions.indices : [];
-  const unsolvedToday = frozenIndices.map(idx => ({
-    q: todaysGroup.questions[idx],
-    idx,
-    done: todaysArr[idx]
-  }));
-  const doneAlready = todaysGroup.questions.filter((_, idx) => todaysArr[idx]).length;
   const isDoneToday = lastCompletedDate === todayStr();
+  const totalPlanProblems = PROBLEM_BANK.length;
+  const totalPlanDone = PROBLEM_BANK.filter(e => data.srs[e.id]).length;
+  const sel = todaysSelection && todaysSelection.day === day ? todaysSelection : null;
+  const todaysNew = sel ? sel.newIds.map(id => PROBLEM_BANK[id]) : [];
+  const todaysReview = sel ? sel.reviewIds.map(id => PROBLEM_BANK[id]) : [];
+  const todaysTotal = todaysNew.length + todaysReview.length;
+  const todaysDoneCount = [...todaysNew, ...todaysReview].filter(e => data.srs[e.id] && data.srs[e.id].lastDoneDay === day).length;
+
+  // Shared card renderer for a single problem: checkbox, difficulty dot,
+  // clickable platform link, meta line, and a per-problem notes textarea.
+  // Used by both the Daily Plan and the Problem Bank browse tab.
+  // Renders a topic title with a tappable (i) icon that reveals a short
+  // description + resource links (not the problem's solution).
+  const renderTopicHeader = (topic, extraStyle) => {
+    const info = getTopicInfo(topic);
+    const isOpen = openInfoTopic === topic;
+    return /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: isOpen ? 10 : 0
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        ...extraStyle
+      }
+    }, /*#__PURE__*/React.createElement("span", null, topic), info && /*#__PURE__*/React.createElement("button", {
+      onClick: () => setOpenInfoTopic(isOpen ? null : topic),
+      style: styles.infoBtn,
+      "aria-label": `About ${topic}`,
+      "aria-expanded": isOpen
+    }, "ⓘ")), isOpen && info && /*#__PURE__*/React.createElement("div", {
+      style: styles.infoPanel
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.infoPanelText
+    }, info.description), /*#__PURE__*/React.createElement("div", {
+      style: styles.planItemLinks
+    }, /*#__PURE__*/React.createElement("a", {
+      href: info.videoUrl,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      style: styles.searchLink
+    }, "🎥 Video tutorials"), /*#__PURE__*/React.createElement("a", {
+      href: info.articleUrl,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      style: styles.searchLink
+    }, "📖 Articles"))));
+  };
+  const renderProblemCard = (e, dayForToggle) => {
+    const record = data.srs[e.id];
+    const doneToday = dayForToggle != null && !!record && record.lastDoneDay === dayForToggle;
+    const everDone = !!record;
+    const checked = dayForToggle != null ? doneToday : everDone;
+    const hasNote = !!(data.problemNotes[e.id] && data.problemNotes[e.id].trim());
+    return /*#__PURE__*/React.createElement("li", {
+      key: e.id,
+      style: styles.planItem
+    }, /*#__PURE__*/React.createElement("button", {
+      onClick: () => toggleProblem(e.id, dayForToggle != null ? dayForToggle : day),
+      style: {
+        ...styles.checkbox,
+        borderColor: checked ? '#4DD0E1' : '#3A4150',
+        background: checked ? '#4DD0E1' : 'transparent'
+      },
+      "aria-pressed": checked
+    }, checked && /*#__PURE__*/React.createElement("span", {
+      style: styles.checkMark
+    }, "✓")), /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...styles.priorityDot,
+        background: DIFFICULTY_COLORS[e.difficulty] || '#8A93A6'
+      }
+    }), /*#__PURE__*/React.createElement("a", {
+      href: e.url,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      style: {
+        ...styles.problemLink,
+        flex: 1,
+        textDecoration: checked ? 'line-through' : 'none',
+        opacity: checked ? 0.6 : 1
+      }
+    }, e.problem), /*#__PURE__*/React.createElement("button", {
+      onClick: () => setDetailModal(e.id),
+      style: styles.detailsBtn,
+      "aria-label": `Details for ${e.problem}`
+    }, hasNote ? '📝' : 'ⓘ'));
+  };
   return /*#__PURE__*/React.createElement("div", {
     style: styles.page
   }, /*#__PURE__*/React.createElement("style", null, `
@@ -560,30 +1934,31 @@ function PrepTracker() {
   }, "Daily Plan"), /*#__PURE__*/React.createElement("button", {
     style: {
       ...styles.tabBtn,
-      ...(activeTab === 'topics' ? styles.tabBtnActive : {})
-    },
-    onClick: () => setActiveTab('topics')
-  }, "Topics"), /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...styles.tabBtn,
-      ...(activeTab === 'dsa' ? styles.tabBtnActive : {})
-    },
-    onClick: () => setActiveTab('dsa')
-  }, "DSA Log"), /*#__PURE__*/React.createElement("button", {
-    style: {
-      ...styles.tabBtn,
       ...(activeTab === 'dsaQuestions' ? styles.tabBtnActive : {})
     },
     onClick: () => setActiveTab('dsaQuestions')
-  }, "DSA Questions"), /*#__PURE__*/React.createElement("button", {
+  }, "Problem Bank"), /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...styles.tabBtn,
+      ...(activeTab === 'progress' ? styles.tabBtnActive : {})
+    },
+    onClick: () => setActiveTab('progress')
+  }, "Progress"), /*#__PURE__*/React.createElement("button", {
     style: {
       ...styles.tabBtn,
       ...(activeTab === 'notes' ? styles.tabBtnActive : {})
     },
     onClick: () => setActiveTab('notes')
-  }, "Notes"), /*#__PURE__*/React.createElement("div", {
+  }, "Notes")), /*#__PURE__*/React.createElement("div", {
+    style: styles.utilityRow
+  }, /*#__PURE__*/React.createElement("div", {
     style: styles.saveIndicator
-  }, saveState === 'saving' && 'saving…', saveState === 'saved' && 'saved ✓', saveState === 'error' && 'save failed'), /*#__PURE__*/React.createElement("button", {
+  }, saveState === 'saving' && 'saving…', saveState === 'saved' && 'saved ✓', saveState === 'error' && 'save failed'), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("button", {
     style: styles.backupBtn,
     onClick: exportBackup,
     title: "Download a backup file"
@@ -597,7 +1972,7 @@ function PrepTracker() {
     style: {
       display: 'none'
     }
-  }))), activeTab === 'daily' && /*#__PURE__*/React.createElement("div", {
+  })))), activeTab === 'daily' && /*#__PURE__*/React.createElement("div", {
     style: styles.dailyWrap
   }, /*#__PURE__*/React.createElement("div", {
     style: styles.streakRow
@@ -613,73 +1988,31 @@ function PrepTracker() {
     style: styles.streakNum
   }, day), /*#__PURE__*/React.createElement("div", {
     style: styles.streakLabel
-  }, "plan day")), /*#__PURE__*/React.createElement("div", {
+  }, "plan day", sel && sel.cycle > 1 ? ` (round ${sel.cycle})` : '')), /*#__PURE__*/React.createElement("div", {
     style: styles.streakCard
   }, /*#__PURE__*/React.createElement("div", {
     style: styles.streakNum
-  }, dailyTarget), /*#__PURE__*/React.createElement("div", {
+  }, totalPlanDone, "/", totalPlanProblems), /*#__PURE__*/React.createElement("div", {
     style: styles.streakLabel
-  }, "target/day"))), /*#__PURE__*/React.createElement("div", {
+  }, "problems logged"))), sel && /*#__PURE__*/React.createElement("div", {
     style: styles.todayCard
   }, /*#__PURE__*/React.createElement("div", {
     style: styles.todayEyebrow
-  }, "TODAY'S PATTERN — ROTATION ", (day - 1) % DSA_QUESTIONS.length + 1, "/", DSA_QUESTIONS.length), /*#__PURE__*/React.createElement("div", {
-    style: styles.todayTitle
-  }, todaysGroup.pattern), /*#__PURE__*/React.createElement("div", {
+  }, sel.tier === 'core' ? '🔵 CORE' : '🔴 ADVANCED', " · PATTERN ", sel.cycle > 1 ? `(ROUND ${sel.cycle}) ` : '', (day - 1) % SUBPATTERN_ORDER.length + 1, "/", SUBPATTERN_ORDER.length), renderTopicHeader(sel.topic, styles.todayTitle), /*#__PURE__*/React.createElement("div", {
+    style: styles.todaySubPattern
+  }, sel.subPattern), /*#__PURE__*/React.createElement("div", {
     style: styles.todaySub
-  }, doneAlready, "/", todaysGroup.questions.length, " solved overall in this pattern"), /*#__PURE__*/React.createElement("div", {
-    style: styles.algoBox
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.algoBoxTitle
-  }, "Know the template before you start"), ALGO_CHECKLIST.find(a => a.pattern === todaysGroup.pattern).techniques.map((t, i) => {
-    const checked = data.algoChecklist[todaysGroup.pattern][i];
-    return /*#__PURE__*/React.createElement("div", {
-      key: i,
-      style: styles.algoItem
-    }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => toggleAlgo(todaysGroup.pattern, i),
-      style: {
-        ...styles.checkbox,
-        borderColor: checked ? '#4DD0E1' : '#3A4150',
-        background: checked ? '#4DD0E1' : 'transparent'
-      },
-      "aria-pressed": checked
-    }, checked && /*#__PURE__*/React.createElement("span", {
-      style: styles.checkMark
-    }, "✓")), /*#__PURE__*/React.createElement("span", {
-      style: {
-        ...styles.checkText,
-        textDecoration: checked ? 'line-through' : 'none',
-        opacity: checked ? 0.5 : 1
-      }
-    }, t));
-  })), /*#__PURE__*/React.createElement("div", {
-    style: styles.todaySub
-  }, unsolvedToday.length > 0 ? `Today's problems — ${unsolvedToday.filter(x => x.done).length}/${unsolvedToday.length} done:` : 'All caught up on this pattern for now 🎉'), /*#__PURE__*/React.createElement("ul", {
+  }, todaysDoneCount, "/", todaysTotal, " done today"), todaysNew.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: styles.sectionLabel
+  }, "🆕 New"), /*#__PURE__*/React.createElement("ul", {
     style: styles.checklist
-  }, unsolvedToday.map(({
-    q,
-    idx,
-    done
-  }) => /*#__PURE__*/React.createElement("li", {
-    key: idx,
-    style: styles.checkItem
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => toggleDsaQuestion(todaysGroup.pattern, idx),
-    style: {
-      ...styles.checkbox,
-      borderColor: done ? '#4DD0E1' : '#3A4150',
-      background: done ? '#4DD0E1' : 'transparent'
-    },
-    "aria-pressed": done
-  }, done && /*#__PURE__*/React.createElement("span", {
-    style: styles.checkMark
-  }, "✓")), /*#__PURE__*/React.createElement(QuestionDetails, {
-    question: q,
-    checked: done,
-    notes: (data.dsaQuestionNotes || {})[q.id] || '',
-    onNotesChange: val => updateDsaQuestionNotes(q.id, val)
-  })))), /*#__PURE__*/React.createElement("button", {
+  }, todaysNew.map(e => renderProblemCard(e, day)))), todaysReview.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: styles.sectionLabel
+  }, "🔁 Due for review"), /*#__PURE__*/React.createElement("ul", {
+    style: styles.checklist
+  }, todaysReview.map(e => renderProblemCard(e, day)))), todaysTotal === 0 && /*#__PURE__*/React.createElement("div", {
+    style: styles.todaySub
+  }, "Nothing scheduled right now -- tap below to move on."), /*#__PURE__*/React.createElement("button", {
     style: {
       ...styles.saveBtn,
       ...styles.dayDoneBtn
@@ -687,226 +2020,347 @@ function PrepTracker() {
     onClick: markDayDone
   }, "Move to next pattern →"), /*#__PURE__*/React.createElement("div", {
     style: styles.streakStatus
-  }, isDoneToday ? '✓ Streak logged for today' : 'Finish the checklist above and your streak logs automatically')), /*#__PURE__*/React.createElement("div", {
+  }, isDoneToday ? '✓ Streak logged for today' : "Finish today's checklist above and your streak logs automatically")), /*#__PURE__*/React.createElement("div", {
     style: styles.overloadNote
-  }, "Progressive overload: 2/day for week 1, 3/day week 2, 4/day week 3, 5/day from week 4 on. Pattern rotates daily so you keep touching every topic instead of tunneling into one.")), activeTab === 'topics' && /*#__PURE__*/React.createElement("div", {
-    style: styles.topicGrid
-  }, TOPICS.map(topic => {
-    const {
-      done,
-      total
-    } = topicProgress(topic);
-    const pct = Math.round(done / total * 100);
-    return /*#__PURE__*/React.createElement("div", {
-      key: topic.id,
-      style: styles.topicCard
-    }, /*#__PURE__*/React.createElement("div", {
-      style: styles.topicHead
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        ...styles.topicDot,
-        background: topic.accent
-      }
-    }), /*#__PURE__*/React.createElement("span", {
-      style: styles.topicLabel
-    }, topic.label), /*#__PURE__*/React.createElement("span", {
-      style: styles.topicCount
-    }, done, "/", total)), /*#__PURE__*/React.createElement("div", {
-      style: styles.ledgerTrack
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        ...styles.ledgerFill,
-        width: `${pct}%`,
-        background: topic.accent
-      }
-    })), /*#__PURE__*/React.createElement("ul", {
-      style: styles.checklist
-    }, topic.items.map((item, idx) => {
-      const checked = data.checklist[topic.id][idx];
-      return /*#__PURE__*/React.createElement("li", {
-        key: idx,
-        style: styles.checkItem
-      }, /*#__PURE__*/React.createElement("button", {
-        onClick: () => toggleItem(topic.id, idx),
-        style: {
-          ...styles.checkbox,
-          borderColor: checked ? topic.accent : '#3A4150',
-          background: checked ? topic.accent : 'transparent'
-        },
-        "aria-pressed": checked,
-        "aria-label": item
-      }, checked && /*#__PURE__*/React.createElement("span", {
-        style: styles.checkMark
-      }, "✓")), /*#__PURE__*/React.createElement("span", {
-        style: {
-          ...styles.checkText,
-          textDecoration: checked ? 'line-through' : 'none',
-          opacity: checked ? 0.5 : 1
-        }
-      }, item));
-    })));
-  })), activeTab === 'dsa' && /*#__PURE__*/React.createElement("div", {
-    style: styles.dsaWrap
-  }, /*#__PURE__*/React.createElement("div", {
-    style: styles.dsaHeadRow
-  }, /*#__PURE__*/React.createElement("span", {
-    style: styles.dsaHeadLabel
-  }, "Pattern"), /*#__PURE__*/React.createElement("span", {
-    style: styles.dsaHeadLabel
-  }, "Solved")), data.dsa.map((d, idx) => {
-    const pct = Math.round(d.done / d.target * 100);
-    return /*#__PURE__*/React.createElement("div", {
-      key: d.pattern,
-      style: styles.dsaRow
-    }, /*#__PURE__*/React.createElement("div", {
-      style: styles.dsaRowTop
-    }, /*#__PURE__*/React.createElement("span", {
-      style: styles.dsaPattern
-    }, d.pattern), /*#__PURE__*/React.createElement("span", {
-      style: styles.dsaFraction
-    }, d.done, "/", d.target)), /*#__PURE__*/React.createElement("div", {
-      style: styles.ledgerTrack
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        ...styles.ledgerFill,
-        width: `${pct}%`,
-        background: '#E8617A'
-      }
-    })), /*#__PURE__*/React.createElement("div", {
-      style: styles.dsaControls
-    }, /*#__PURE__*/React.createElement("button", {
-      style: styles.stepBtn,
-      onClick: () => bumpDsa(idx, -1)
-    }, "−"), /*#__PURE__*/React.createElement("button", {
-      style: styles.stepBtn,
-      onClick: () => bumpDsa(idx, 1)
-    }, "+")));
-  })), activeTab === 'dsaQuestions' && /*#__PURE__*/React.createElement("div", {
+  }, "Cycles through every pattern once, then brings solved problems back for review on a spaced schedule (3 → 7 → 14 → 30 plan-days) so patterns stay fresh instead of fading after one pass.")), activeTab === 'dsaQuestions' && /*#__PURE__*/React.createElement("div", {
     style: styles.topicGrid
   }, /*#__PURE__*/React.createElement("div", {
     style: styles.filterRow
   }, /*#__PURE__*/React.createElement("select", {
-    value: dsaFilterPattern,
-    onChange: e => setDsaFilterPattern(e.target.value),
+    value: filterPriority,
+    onChange: e => setFilterPriority(e.target.value),
     style: styles.filterSelect
   }, /*#__PURE__*/React.createElement("option", {
     value: "all"
-  }, "All patterns"), DSA_QUESTIONS.map(g => /*#__PURE__*/React.createElement("option", {
-    key: g.pattern,
-    value: g.pattern
-  }, g.pattern))), /*#__PURE__*/React.createElement("label", {
+  }, "All tiers"), /*#__PURE__*/React.createElement("option", {
+    value: "core"
+  }, "🔵 Core"), /*#__PURE__*/React.createElement("option", {
+    value: "advanced"
+  }, "🔴 Advanced")), /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    value: filterText,
+    onChange: e => setFilterText(e.target.value),
+    placeholder: "Search topic or problem…",
+    style: styles.filterSelect
+  }), /*#__PURE__*/React.createElement("label", {
     style: styles.filterCheckLabel
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
     checked: hideCompleted,
     onChange: e => setHideCompleted(e.target.checked),
     style: styles.filterCheckbox
-  }), "Hide completed")), DSA_QUESTIONS.filter(g => dsaFilterPattern === 'all' || g.pattern === dsaFilterPattern).map(group => {
-    const arr = data.dsaQuestions[group.pattern] || [];
-    const done = arr.filter(Boolean).length;
-    const total = group.questions.length;
-    const pct = Math.round(done / total * 100);
-    const isOpen = !collapsed[group.pattern];
-    const algoTechniques = ALGO_CHECKLIST.find(a => a.pattern === group.pattern).techniques;
-    const algoArr = data.algoChecklist[group.pattern] || [];
-    const visibleQuestions = group.questions.map((q, idx) => ({
-      q,
-      idx
-    })).filter(({
-      idx
-    }) => !hideCompleted || !arr[idx]);
+  }), "Hide completed")), /*#__PURE__*/React.createElement("div", {
+    style: styles.expandRow
+  }, /*#__PURE__*/React.createElement("button", {
+    style: styles.expandBtn,
+    onClick: () => setCollapsed({})
+  }, "Expand all"), /*#__PURE__*/React.createElement("button", {
+    style: styles.expandBtn,
+    onClick: () => setCollapsed(Object.fromEntries(SUBPATTERN_ORDER.map((_, i) => [`sub-${i}`, true])))
+  }, "Collapse all")), SUBPATTERN_ORDER.map((sub, subIdx) => {
+    const subEntries = PROBLEM_BANK.filter(e => e.topic === sub.topic && e.subPattern === sub.subPattern);
+    const visible = subEntries.filter(e => {
+      if (filterPriority !== 'all' && e.tier !== filterPriority) return false;
+      if (hideCompleted && data.srs[e.id]) return false;
+      if (filterText.trim()) {
+        const q = filterText.trim().toLowerCase();
+        const hay = `${e.topic} ${e.subPattern} ${e.problem}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+    if (visible.length === 0 && (filterText.trim() || filterPriority !== 'all' || hideCompleted)) return null;
+    const doneCount = subEntries.filter(e => data.srs[e.id]).length;
+    const subKey = `sub-${subIdx}`;
+    const isOpen = !collapsed[subKey];
     return /*#__PURE__*/React.createElement("div", {
-      key: group.pattern,
+      key: subKey,
       style: styles.topicCard
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.collapseHeadRow
     }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => toggleCollapsed(group.pattern),
+      onClick: () => toggleCollapsed(subKey),
       style: styles.collapseHead,
       "aria-expanded": isOpen
     }, /*#__PURE__*/React.createElement("span", {
       style: {
         ...styles.topicDot,
-        background: '#E8617A'
+        background: TIER_COLORS[sub.tier]
       }
     }), /*#__PURE__*/React.createElement("span", {
       style: styles.topicLabel
-    }, group.pattern), /*#__PURE__*/React.createElement("span", {
+    }, sub.topic, " — ", sub.subPattern), /*#__PURE__*/React.createElement("span", {
       style: styles.topicCount
-    }, done, "/", total), /*#__PURE__*/React.createElement("span", {
+    }, doneCount, "/", subEntries.length), /*#__PURE__*/React.createElement("span", {
       style: styles.chevron
-    }, isOpen ? '▾' : '▸')), /*#__PURE__*/React.createElement("div", {
+    }, isOpen ? '▾' : '▸')), getTopicInfo(sub.topic) && /*#__PURE__*/React.createElement("button", {
+      onClick: ev => {
+        ev.stopPropagation();
+        setOpenInfoTopic(openInfoTopic === sub.topic ? null : sub.topic);
+      },
+      style: styles.infoBtn,
+      "aria-label": `About ${sub.topic}`
+    }, "ⓘ")), openInfoTopic === sub.topic && getTopicInfo(sub.topic) && /*#__PURE__*/React.createElement("div", {
+      style: styles.infoPanel
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.infoPanelText
+    }, getTopicInfo(sub.topic).description), /*#__PURE__*/React.createElement("div", {
+      style: styles.planItemLinks
+    }, /*#__PURE__*/React.createElement("a", {
+      href: getTopicInfo(sub.topic).videoUrl,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      style: styles.searchLink
+    }, "🎥 Video tutorials"), /*#__PURE__*/React.createElement("a", {
+      href: getTopicInfo(sub.topic).articleUrl,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      style: styles.searchLink
+    }, "📖 Articles"))), /*#__PURE__*/React.createElement("div", {
       style: styles.ledgerTrack
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         ...styles.ledgerFill,
-        width: `${pct}%`,
-        background: '#E8617A'
+        width: `${Math.round(doneCount / subEntries.length * 100)}%`,
+        background: TIER_COLORS[sub.tier]
       }
-    })), isOpen && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      style: styles.algoBoxSmall
-    }, /*#__PURE__*/React.createElement("div", {
-      style: styles.algoBoxTitle
-    }, "Templates to know"), algoTechniques.map((t, i) => {
-      const checked = algoArr[i];
-      return /*#__PURE__*/React.createElement("div", {
-        key: i,
-        style: styles.algoItem
-      }, /*#__PURE__*/React.createElement("button", {
-        onClick: () => toggleAlgo(group.pattern, i),
-        style: {
-          ...styles.checkbox,
-          borderColor: checked ? '#4DD0E1' : '#3A4150',
-          background: checked ? '#4DD0E1' : 'transparent'
-        },
-        "aria-pressed": checked
-      }, checked && /*#__PURE__*/React.createElement("span", {
-        style: styles.checkMark
-      }, "✓")), /*#__PURE__*/React.createElement("span", {
-        style: {
-          ...styles.checkText,
-          textDecoration: checked ? 'line-through' : 'none',
-          opacity: checked ? 0.5 : 1
-        }
-      }, t));
-    })), /*#__PURE__*/React.createElement("ul", {
+    })), isOpen && /*#__PURE__*/React.createElement("ul", {
       style: styles.checklist
-    }, visibleQuestions.map(({
-      q,
-      idx
-    }) => {
-      const checked = arr[idx];
-      return /*#__PURE__*/React.createElement("li", {
-        key: idx,
-        style: styles.checkItem
-      }, /*#__PURE__*/React.createElement("button", {
-        onClick: () => toggleDsaQuestion(group.pattern, idx),
-        style: {
-          ...styles.checkbox,
-          borderColor: checked ? '#E8617A' : '#3A4150',
-          background: checked ? '#E8617A' : 'transparent'
-        },
-        "aria-pressed": checked,
-        "aria-label": q.title
-      }, checked && /*#__PURE__*/React.createElement("span", {
-        style: styles.checkMark
-      }, "✓")), /*#__PURE__*/React.createElement(QuestionDetails, {
-        question: q,
-        checked,
-        notes: (data.dsaQuestionNotes || {})[q.id] || '',
-        onNotesChange: val => updateDsaQuestionNotes(q.id, val)
-      }));
-    }))));
-  })), activeTab === 'notes' && /*#__PURE__*/React.createElement("div", {
+    }, visible.map(e => renderProblemCard(e, null))));
+  })), activeTab === 'progress' && (() => {
+    const coreEntries = PROBLEM_BANK.filter(e => e.tier === 'core');
+    const advancedEntries = PROBLEM_BANK.filter(e => e.tier === 'advanced');
+    const coreDone = coreEntries.filter(e => data.srs[e.id]).length;
+    const advancedDone = advancedEntries.filter(e => data.srs[e.id]).length;
+    const activeDays = Object.keys(data.activityLog).length;
+    const totalLogged = Object.values(data.activityLog).reduce((s, c) => s + c, 0);
+    const weeksToShow = 14;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const endDate = new Date(today);
+    endDate.setDate(endDate.getDate() + (6 - endDate.getDay()));
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - (weeksToShow * 7 - 1));
+    const heatWeeks = [];
+    let cursor = new Date(startDate);
+    for (let w = 0; w < weeksToShow; w++) {
+      const days = [];
+      for (let d = 0; d < 7; d++) {
+        const dateStr = cursor.toISOString().slice(0, 10);
+        days.push({
+          date: dateStr,
+          count: data.activityLog[dateStr] || 0,
+          isFuture: cursor > today
+        });
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      heatWeeks.push(days);
+    }
+    const heatColor = (count, isFuture) => {
+      if (isFuture) return 'transparent';
+      if (count === 0) return '#161B24';
+      if (count === 1) return '#1F4D3D';
+      if (count <= 3) return '#2E7D5B';
+      if (count <= 5) return '#4DB380';
+      return '#6DBE8C';
+    };
+    const ProgressBar = ({
+      label,
+      done,
+      total,
+      color
+    }) => /*#__PURE__*/React.createElement("div", {
+      style: {
+        marginBottom: 16
+      }
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.progressBarHead
+    }, /*#__PURE__*/React.createElement("span", {
+      style: styles.progressBarLabel
+    }, label), /*#__PURE__*/React.createElement("span", {
+      style: styles.progressBarCount
+    }, done, "/", total)), /*#__PURE__*/React.createElement("div", {
+      style: styles.ledgerTrack
+    }, /*#__PURE__*/React.createElement("div", {
+      style: {
+        ...styles.ledgerFill,
+        width: `${total ? Math.round(done / total * 100) : 0}%`,
+        background: color
+      }
+    })));
+    return /*#__PURE__*/React.createElement("div", {
+      style: styles.dailyWrap
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.todayCard
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.todayEyebrow
+    }, "OVERALL PROGRESS"), /*#__PURE__*/React.createElement(ProgressBar, {
+      label: "All problems",
+      done: overallDone,
+      total: overallTotal,
+      color: "#E8A33D"
+    }), /*#__PURE__*/React.createElement(ProgressBar, {
+      label: "🔵 Core patterns",
+      done: coreDone,
+      total: coreEntries.length,
+      color: TIER_COLORS.core
+    }), /*#__PURE__*/React.createElement(ProgressBar, {
+      label: "🔴 Advanced patterns",
+      done: advancedDone,
+      total: advancedEntries.length,
+      color: TIER_COLORS.advanced
+    })), /*#__PURE__*/React.createElement("div", {
+      style: styles.streakRow
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.streakCard
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.streakNum
+    }, streak), /*#__PURE__*/React.createElement("div", {
+      style: styles.streakLabel
+    }, "current streak")), /*#__PURE__*/React.createElement("div", {
+      style: styles.streakCard
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.streakNum
+    }, activeDays), /*#__PURE__*/React.createElement("div", {
+      style: styles.streakLabel
+    }, "active days")), /*#__PURE__*/React.createElement("div", {
+      style: styles.streakCard
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.streakNum
+    }, totalLogged), /*#__PURE__*/React.createElement("div", {
+      style: styles.streakLabel
+    }, "total logged"))), /*#__PURE__*/React.createElement("div", {
+      style: styles.todayCard
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.todayEyebrow
+    }, "ACTIVITY -- LAST ", weeksToShow, " WEEKS"), /*#__PURE__*/React.createElement("div", {
+      style: styles.heatmapScroll
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.heatmapGrid
+    }, heatWeeks.map((week, wi) => /*#__PURE__*/React.createElement("div", {
+      key: wi,
+      style: styles.heatmapCol
+    }, week.map((day, di) => /*#__PURE__*/React.createElement("div", {
+      key: di,
+      title: `${day.date}: ${day.count} solved`,
+      style: {
+        ...styles.heatmapCell,
+        background: heatColor(day.count, day.isFuture)
+      }
+    })))))), /*#__PURE__*/React.createElement("div", {
+      style: styles.heatmapLegend
+    }, /*#__PURE__*/React.createElement("span", null, "Less"), /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...styles.heatmapCell,
+        background: '#161B24'
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...styles.heatmapCell,
+        background: '#1F4D3D'
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...styles.heatmapCell,
+        background: '#2E7D5B'
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...styles.heatmapCell,
+        background: '#4DB380'
+      }
+    }), /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...styles.heatmapCell,
+        background: '#6DBE8C'
+      }
+    }), /*#__PURE__*/React.createElement("span", null, "More"))));
+  })(), activeTab === 'notes' && /*#__PURE__*/React.createElement("div", {
     style: styles.notesWrap
-  }, /*#__PURE__*/React.createElement("textarea", {
-    value: data.notes,
-    onChange: e => updateNotes(e.target.value),
-    onBlur: saveNotes,
+  }, /*#__PURE__*/React.createElement("button", {
+    style: {
+      ...styles.saveBtn,
+      alignSelf: 'flex-start'
+    },
+    onClick: addNote
+  }, "+ New note"), data.notesList.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: styles.todaySub
+  }, "No notes yet -- tap \"+ New note\" to add one."), data.notesList.map(n => /*#__PURE__*/React.createElement("div", {
+    key: n.id,
+    style: styles.noteCard
+  }, /*#__PURE__*/React.createElement("div", {
+    style: styles.noteCardHead
+  }, /*#__PURE__*/React.createElement("span", {
+    style: styles.noteDate
+  }, new Date(n.createdAt).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  })), /*#__PURE__*/React.createElement("button", {
+    style: styles.noteDeleteBtn,
+    onClick: () => deleteNote(n.id),
+    "aria-label": "Delete note"
+  }, "🗑")), /*#__PURE__*/React.createElement("textarea", {
+    value: n.text,
+    onChange: e => updateNote(n.id, e.target.value),
+    onBlur: saveNote,
     placeholder: "Interview debriefs, company-specific notes, questions you got asked…",
     style: styles.notesArea
-  }), /*#__PURE__*/React.createElement("button", {
-    style: styles.saveBtn,
-    onClick: saveNotes
-  }, "Save notes")));
+  })))), detailModal != null && (() => {
+    const entry = PROBLEM_BANK[detailModal];
+    const record = data.srs[detailModal];
+    const closeModal = () => {
+      saveProblemNotes(detailModal);
+      setDetailModal(null);
+    };
+    return /*#__PURE__*/React.createElement("div", {
+      style: styles.modalOverlay,
+      onClick: closeModal
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.modalBox,
+      onClick: ev => ev.stopPropagation()
+    }, /*#__PURE__*/React.createElement("div", {
+      style: styles.modalHead
+    }, /*#__PURE__*/React.createElement("span", {
+      style: styles.modalTitle
+    }, entry.problem), /*#__PURE__*/React.createElement("button", {
+      style: styles.modalClose,
+      onClick: closeModal,
+      "aria-label": "Close"
+    }, "✕")), /*#__PURE__*/React.createElement("div", {
+      style: styles.modalMeta
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        ...styles.priorityDot,
+        background: DIFFICULTY_COLORS[entry.difficulty] || '#8A93A6'
+      }
+    }), entry.difficulty, " · ", entry.platform, " · ", entry.topic, " — ", entry.subPattern, record && record.timesDone > 0 ? ` · reviewed ${record.timesDone}×` : ' · not attempted yet'), /*#__PURE__*/React.createElement("div", {
+      style: styles.planItemLinks
+    }, /*#__PURE__*/React.createElement("a", {
+      href: entry.url,
+      target: "_blank",
+      rel: "noopener noreferrer",
+      style: styles.searchLink
+    }, "Open problem ↗")), /*#__PURE__*/React.createElement("div", {
+      style: styles.modalNotesLabel
+    }, "Your notes"), /*#__PURE__*/React.createElement("textarea", {
+      value: data.problemNotes[detailModal] || '',
+      onChange: ev => updateProblemNotes(detailModal, ev.target.value),
+      placeholder: "Approach, gotchas, complexity, what you'd do differently next time…",
+      style: {
+        ...styles.problemNotesArea,
+        minHeight: 130
+      },
+      autoFocus: true
+    }), /*#__PURE__*/React.createElement("button", {
+      style: {
+        ...styles.saveBtn,
+        alignSelf: 'flex-end',
+        marginTop: 10
+      },
+      onClick: closeModal
+    }, "Done")));
+  })());
 }
 const styles = {
   page: {
@@ -970,11 +2424,17 @@ const styles = {
   tabs: {
     display: 'flex',
     gap: 6,
-    marginBottom: 16,
+    marginBottom: 10,
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  },
+  utilityRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
     alignItems: 'center',
     borderBottom: '1px solid #1C212B',
     paddingBottom: 10,
-    flexWrap: 'wrap'
+    marginBottom: 16
   },
   tabBtn: {
     background: 'transparent',
@@ -993,7 +2453,6 @@ const styles = {
     borderColor: '#3A4150'
   },
   saveIndicator: {
-    marginLeft: 'auto',
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 11,
     color: '#6B7280'
@@ -1028,19 +2487,59 @@ const styles = {
     gap: 8,
     marginBottom: 10
   },
+  collapseHeadRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4
+  },
   collapseHead: {
     display: 'flex',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 10,
     background: 'transparent',
     border: 'none',
     padding: 0,
-    width: '100%',
+    flex: 1,
+    minWidth: 0,
     cursor: 'pointer',
     textAlign: 'left',
     color: '#E6E9EF',
     font: 'inherit'
+  },
+  infoBtn: {
+    background: 'transparent',
+    border: '1px solid #3A4150',
+    borderRadius: '50%',
+    width: 20,
+    height: 20,
+    flexShrink: 0,
+    color: '#8A93A6',
+    fontSize: 12,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0
+  },
+  infoPanel: {
+    background: '#0D1119',
+    border: '1px solid #232A36',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 10
+  },
+  infoPanelText: {
+    fontSize: 12.5,
+    color: '#C7CCD6',
+    lineHeight: 1.55,
+    marginBottom: 8
+  },
+  todaySubPattern: {
+    fontSize: 13,
+    color: '#8A93A6',
+    marginTop: -6,
+    marginBottom: 4
   },
   chevron: {
     color: '#6B7280',
@@ -1088,42 +2587,144 @@ const styles = {
     alignItems: 'flex-start',
     gap: 10
   },
-  questionBody: {
-    flex: 1,
-    minWidth: 0
-  },
-  questionTitleRow: {
+  planItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap'
+    gap: 10,
+    marginBottom: 10
   },
-  questionLink: {
+  detailsBtn: {
+    background: 'transparent',
+    border: '1px solid #3A4150',
+    borderRadius: '50%',
+    width: 24,
+    height: 24,
+    flexShrink: 0,
+    color: '#8A93A6',
+    fontSize: 12,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'rgba(6, 8, 12, 0.7)',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    zIndex: 100
+  },
+  modalBox: {
+    background: '#141920',
+    border: '1px solid #262C38',
+    borderRadius: '16px 16px 0 0',
+    padding: 18,
+    width: '100%',
+    maxWidth: 480,
+    maxHeight: '80vh',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  modalHead: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 10
+  },
+  modalTitle: {
+    fontSize: 15,
+    fontWeight: 700,
     color: '#E6E9EF',
-    fontSize: 14,
     lineHeight: 1.4
   },
-  platformBadge: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 10,
-    color: '#4DD0E1',
-    border: '1px solid #264653',
-    borderRadius: 999,
-    padding: '2px 6px',
-    background: '#0D2028'
+  modalClose: {
+    background: 'transparent',
+    border: 'none',
+    color: '#8A93A6',
+    fontSize: 16,
+    cursor: 'pointer',
+    flexShrink: 0,
+    padding: 4
   },
-  questionNotes: {
+  modalMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 12.5,
+    color: '#8A93A6',
+    marginBottom: 12
+  },
+  modalNotesLabel: {
+    fontSize: 11.5,
+    fontWeight: 600,
+    color: '#8A93A6',
+    margin: '14px 0 6px'
+  },
+  planItemTop: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6
+  },
+  priorityDot: {
+    width: 8,
+    height: 8,
+    borderRadius: '50%',
+    flexShrink: 0
+  },
+  planItemMeta: {
+    fontSize: 11.5,
+    color: '#6B7280',
+    marginTop: 2
+  },
+  planItemLinks: {
+    display: 'flex',
+    gap: 10,
+    marginTop: 6
+  },
+  sectionLabel: {
+    fontSize: 11.5,
+    fontWeight: 600,
+    color: '#8A93A6',
+    letterSpacing: '0.03em',
+    margin: '14px 0 8px'
+  },
+  problemLink: {
+    fontSize: 13.5,
+    fontWeight: 600,
+    color: '#E6E9EF',
+    textDecoration: 'none',
+    borderBottom: '1px solid #3A4150'
+  },
+  problemNotesArea: {
     width: '100%',
-    minHeight: 34,
-    marginTop: 6,
-    resize: 'vertical',
-    background: '#0B0E14',
-    color: '#C8CEDA',
-    border: '1px solid #262C38',
+    marginTop: 8,
+    background: '#0D1119',
+    border: '1px solid #232A36',
     borderRadius: 6,
-    padding: '6px 8px',
+    padding: '8px 10px',
+    color: '#C7CCD6',
     fontFamily: "'Inter', sans-serif",
-    fontSize: 12
+    fontSize: 12.5,
+    lineHeight: 1.5,
+    resize: 'vertical',
+    minHeight: 34
+  },
+  searchLink: {
+    fontSize: 11.5,
+    color: '#4DD0E1',
+    textDecoration: 'none',
+    background: '#0D1119',
+    border: '1px solid #232A36',
+    borderRadius: 5,
+    padding: '3px 8px'
   },
   checkbox: {
     width: 18,
@@ -1206,12 +2807,38 @@ const styles = {
     flexDirection: 'column',
     gap: 10
   },
-  notesArea: {
-    minHeight: 320,
+  noteCard: {
     background: '#10141C',
     border: '1px solid #1C212B',
     borderRadius: 10,
-    padding: 14,
+    padding: 14
+  },
+  noteCardHead: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  noteDate: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 11,
+    color: '#6B7280'
+  },
+  noteDeleteBtn: {
+    background: 'transparent',
+    border: 'none',
+    fontSize: 13,
+    cursor: 'pointer',
+    opacity: 0.6,
+    padding: 4
+  },
+  notesArea: {
+    minHeight: 100,
+    width: '100%',
+    background: '#0D1119',
+    border: '1px solid #232A36',
+    borderRadius: 8,
+    padding: 10,
     color: '#E6E9EF',
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 13,
@@ -1324,6 +2951,49 @@ const styles = {
     lineHeight: 1.5,
     padding: '0 4px'
   },
+  progressBarHead: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginBottom: 6
+  },
+  progressBarLabel: {
+    fontSize: 13,
+    fontWeight: 500,
+    color: '#C7CCD6'
+  },
+  progressBarCount: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 12,
+    color: '#8A93A6'
+  },
+  heatmapScroll: {
+    overflowX: 'auto',
+    paddingBottom: 4
+  },
+  heatmapGrid: {
+    display: 'flex',
+    gap: 3,
+    width: 'max-content'
+  },
+  heatmapCol: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 3
+  },
+  heatmapCell: {
+    width: 11,
+    height: 11,
+    borderRadius: 2,
+    display: 'inline-block'
+  },
+  heatmapLegend: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 10,
+    fontSize: 10.5,
+    color: '#6B7280'
+  },
   filterRow: {
     display: 'flex',
     gap: 12,
@@ -1352,6 +3022,20 @@ const styles = {
     accentColor: '#E8617A',
     width: 14,
     height: 14
+  },
+  expandRow: {
+    display: 'flex',
+    gap: 8,
+    marginBottom: 4
+  },
+  expandBtn: {
+    fontSize: 11.5,
+    color: '#4DD0E1',
+    background: 'transparent',
+    border: '1px solid #232A36',
+    borderRadius: 6,
+    padding: '4px 10px',
+    cursor: 'pointer'
   }
 };
   const root = ReactDOM.createRoot(document.getElementById('root'));
