@@ -1,4 +1,4 @@
-const CACHE_NAME = 'prep-tracker-v6';
+const CACHE_NAME = 'prep-tracker-v8';
 const ASSETS = [
   './manifest.json',
   './icon-192.png',
