@@ -15,9 +15,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore-compat.js"></script>
 <style>
   html, body { margin: 0; padding: 0; background: #0B0E14; }
 </style>
@@ -25,51 +22,51 @@
 <body>
 <div id="root"></div>
 <script>
-  // ============================================================
-  // FIREBASE SETUP -- replace this with your own project's config.
-  // See README.md for step-by-step console instructions.
-  // This config is NOT a secret; it's safe to have in client code --
-  // access is controlled by Firestore security rules, not by hiding
-  // this object. Do not skip setting up security rules though.
-  // ============================================================
-  const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyCaEt2o-kkk4cjdy2UpKK1UH9cCWpamnoc",
-  authDomain: "prep-tracker-c10be.firebaseapp.com",
-  projectId: "prep-tracker-c10be",
-  storageBucket: "prep-tracker-c10be.firebasestorage.app",
-  messagingSenderId: "746382899186",
-  appId: "1:746382899186:web:5566f5909fec296b911d6b"
-};
-const FIREBASE_CONFIGURED = FIREBASE_CONFIG.apiKey !== "AIzaSyCaEt2o-kkk4cjdy2UpKK1UH9cCWpamnoc";
-// Import the functions you need from the SDKs you need
-  
-  let firestoreDb = null;
-  if (FIREBASE_CONFIGURED) {
-    firebase.initializeApp(FIREBASE_CONFIG);
-    firestoreDb = firebase.firestore();
-    firestoreDb.enablePersistence({ synchronizeTabs: true }).catch((err) => {
-      console.warn('[PrepTracker] Firestore offline persistence unavailable:', err.code);
-    });
+  // localStorage-backed shim matching the storage interface the component expects
+  // In-memory fallback used only if localStorage itself is unavailable or
+  // blocked (e.g. private/incognito browsing on some browsers restricts it
+  // to a 0-byte quota). This keeps the app usable for the session even
+  // then, instead of showing "save failed" on every single action.
+  const memoryFallback = {};
+  let usingFallback = false;
+
+  function warnFallbackOnce() {
+    if (usingFallback) return;
+    usingFallback = true;
+    console.warn('[PrepTracker] localStorage is unavailable in this browser/mode -- falling back to in-memory storage. Your progress will NOT persist after closing this tab. This commonly happens in private/incognito browsing.');
   }
 
-  // Local-only fallback shim (used only before sign-in resolves, or if
-  // Firebase isn't configured yet -- keeps the app from crashing).
-  const memoryFallback = {};
   window.storage = {
     async get(key) {
       try {
         const v = localStorage.getItem(key);
-        return v === null ? null : { key, value: v, shared: false };
+        if (v === null) return null;
+        return { key, value: v, shared: false };
       } catch (e) {
+        warnFallbackOnce();
         return memoryFallback[key] !== undefined ? { key, value: memoryFallback[key], shared: false } : null;
       }
     },
     async set(key, value) {
-      try { localStorage.setItem(key, value); } catch (e) { memoryFallback[key] = value; }
-      return { key, value, shared: false };
+      try {
+        localStorage.setItem(key, value);
+        return { key, value, shared: false };
+      } catch (e) {
+        console.error('[PrepTracker] localStorage.setItem failed:', e.name, e.message);
+        warnFallbackOnce();
+        memoryFallback[key] = value;
+        // Still resolve successfully so the UI shows "saved" -- the data IS
+        // safe for this session, just not across reloads. The console
+        // warning above is the real signal something's off.
+        return { key, value, shared: false };
+      }
     },
     async delete(key) {
-      try { localStorage.removeItem(key); } catch (e) { delete memoryFallback[key]; }
+      try {
+        localStorage.removeItem(key);
+      } catch (e) {
+        delete memoryFallback[key];
+      }
       return { key, deleted: true, shared: false };
     },
     async list(prefix) {
@@ -77,49 +74,11 @@ const FIREBASE_CONFIGURED = FIREBASE_CONFIG.apiKey !== "AIzaSyCaEt2o-kkk4cjdy2Up
         const keys = Object.keys(localStorage).filter(k => !prefix || k.startsWith(prefix));
         return { keys, prefix, shared: false };
       } catch (e) {
-        return { keys: Object.keys(memoryFallback).filter(k => !prefix || k.startsWith(prefix)), prefix, shared: false };
+        const keys = Object.keys(memoryFallback).filter(k => !prefix || k.startsWith(prefix));
+        return { keys, prefix, shared: false };
       }
     }
   };
-
-  // Firestore-backed storage, bound to a specific signed-in user. Swapped
-  // into window.storage once sign-in completes (see AuthGate below). Keeps
-  // the exact same interface, so PrepTracker's code needs zero changes.
-  function createFirestoreStorage(uid) {
-    const docRef = firestoreDb.collection('prepTrackerUsers').doc(uid);
-    return {
-      async get(key) {
-        try {
-          const snap = await docRef.get();
-          if (!snap.exists) return null;
-          const data = snap.data();
-          return (key in data) ? { key, value: data[key], shared: false } : null;
-        } catch (e) {
-          console.error('[PrepTracker] Firestore get failed:', e);
-          return null;
-        }
-      },
-      async set(key, value) {
-        await docRef.set({ [key]: value }, { merge: true });
-        return { key, value, shared: false };
-      },
-      async delete(key) {
-        try {
-          await docRef.update({ [key]: firebase.firestore.FieldValue.delete() });
-        } catch (e) { /* doc or field may not exist yet */ }
-        return { key, deleted: true, shared: false };
-      },
-      async list(prefix) {
-        try {
-          const snap = await docRef.get();
-          const data = snap.exists ? snap.data() : {};
-          return { keys: Object.keys(data).filter(k => !prefix || k.startsWith(prefix)), prefix, shared: false };
-        } catch (e) {
-          return { keys: [], prefix, shared: false };
-        }
-      },
-    };
-  }
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
@@ -1803,10 +1762,7 @@ function computeStreakPatch(dailyPlan) {
     lastCompletedDate: today
   };
 }
-function PrepTracker({
-  user,
-  onSignOut
-} = {}) {
+function PrepTracker() {
   const [data, setData] = useState(loadDefault());
   const [loaded, setLoaded] = useState(false);
   const [activeTab, setActiveTab] = useState('daily');
@@ -2248,14 +2204,7 @@ function PrepTracker({
     style: styles.overallPct
   }, overallPct, "%"), /*#__PURE__*/React.createElement("div", {
     style: styles.overallLabel
-  }, overallDone, "/", overallTotal, " logged"))), onSignOut && /*#__PURE__*/React.createElement("div", {
-    style: styles.syncRow
-  }, /*#__PURE__*/React.createElement("span", {
-    style: styles.syncStatus
-  }, "☁ synced as ", user && user.email), /*#__PURE__*/React.createElement("button", {
-    style: styles.signOutBtn,
-    onClick: onSignOut
-  }, "Sign out")), /*#__PURE__*/React.createElement("div", {
+  }, overallDone, "/", overallTotal, " logged"))), /*#__PURE__*/React.createElement("div", {
     style: styles.tabs
   }, /*#__PURE__*/React.createElement("button", {
     style: {
@@ -2772,26 +2721,6 @@ const styles = {
     marginBottom: 10,
     alignItems: 'center',
     flexWrap: 'wrap'
-  },
-  syncRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10
-  },
-  syncStatus: {
-    fontSize: 11,
-    color: '#6DBE8C',
-    fontFamily: "'JetBrains Mono', monospace"
-  },
-  signOutBtn: {
-    fontSize: 11,
-    color: '#8A93A6',
-    background: 'transparent',
-    border: '1px solid #262C38',
-    borderRadius: 6,
-    padding: '4px 9px',
-    cursor: 'pointer'
   },
   utilityRow: {
     display: 'flex',
@@ -3403,206 +3332,8 @@ const styles = {
     cursor: 'pointer'
   }
 };
-
-// ============================================================
-// Auth gate -- shown before the main app. Handles the signed-out state
-// (login screen), the "Firebase isn't configured yet" state, and swaps
-// window.storage over to Firestore once a user is signed in. Migrates
-// any pre-existing localStorage progress into the account on first sign-in
-// so nobody loses what they'd already tracked before setting this up.
-// ============================================================
-
-function LoginScreen({
-  onSignIn,
-  error,
-  loading
-}) {
-  return /*#__PURE__*/React.createElement("div", {
-    style: authStyles.wrap
-  }, /*#__PURE__*/React.createElement("div", {
-    style: authStyles.card
-  }, /*#__PURE__*/React.createElement("div", {
-    style: authStyles.eyebrow
-  }, "PREP LEDGER"), /*#__PURE__*/React.createElement("div", {
-    style: authStyles.title
-  }, "Interview Prep Tracker"), /*#__PURE__*/React.createElement("div", {
-    style: authStyles.subtitle
-  }, "Sign in to sync your progress across every device."), error && /*#__PURE__*/React.createElement("div", {
-    style: authStyles.error
-  }, error), /*#__PURE__*/React.createElement("button", {
-    style: authStyles.googleBtn,
-    onClick: onSignIn,
-    disabled: loading
-  }, loading ? 'Signing in…' : 'Sign in with Google')));
-}
-function ConfigNeededScreen() {
-  return /*#__PURE__*/React.createElement("div", {
-    style: authStyles.wrap
-  }, /*#__PURE__*/React.createElement("div", {
-    style: authStyles.card
-  }, /*#__PURE__*/React.createElement("div", {
-    style: authStyles.eyebrow
-  }, "SETUP NEEDED"), /*#__PURE__*/React.createElement("div", {
-    style: authStyles.title
-  }, "Connect a Firebase project"), /*#__PURE__*/React.createElement("div", {
-    style: authStyles.subtitle
-  }, "This app needs a free Firebase project to sync your progress. Edit the FIREBASE_CONFIG object near the top of index.html with your own project's config -- see README.md for the exact steps.")));
-}
-function AuthGate() {
-  const [authState, setAuthState] = useState('loading'); // loading | signedOut | signedIn
-  const [error, setError] = useState(null);
-  const [signingIn, setSigningIn] = useState(false);
-  const [user, setUser] = useState(null);
-  useEffect(() => {
-    if (!FIREBASE_CONFIGURED) {
-      setAuthState('configNeeded');
-      return;
-    }
-    const unsub = firebase.auth().onAuthStateChanged(async u => {
-      if (u) {
-        const storage = createFirestoreStorage(u.uid);
-        window.storage = storage;
-        try {
-          const existing = await storage.get('interview-prep-tracker-v1');
-          if (!existing) {
-            const local = localStorage.getItem('interview-prep-tracker-v1');
-            if (local) {
-              await storage.set('interview-prep-tracker-v1', local);
-              console.log('[PrepTracker] Migrated local progress into your account.');
-            }
-          }
-        } catch (e) {
-          console.error('[PrepTracker] Migration check failed:', e);
-        }
-        setUser(u);
-        setAuthState('signedIn');
-        setSigningIn(false);
-      } else {
-        setUser(null);
-        setAuthState('signedOut');
-        setSigningIn(false);
-      }
-    });
-    return unsub;
-  }, []);
-  const handleSignIn = async () => {
-    setError(null);
-    setSigningIn(true);
-    try {
-      const provider = new firebase.auth.GoogleAuthProvider();
-      await firebase.auth().signInWithPopup(provider);
-    } catch (e) {
-      // Popups can be blocked in some installed-PWA/in-app-browser contexts;
-      // fall back to a full-page redirect flow, which works everywhere.
-      if (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment') {
-        try {
-          const provider = new firebase.auth.GoogleAuthProvider();
-          await firebase.auth().signInWithRedirect(provider);
-        } catch (e2) {
-          setError(e2.message);
-          setSigningIn(false);
-        }
-      } else {
-        setError(e.message);
-        setSigningIn(false);
-      }
-    }
-  };
-  const handleSignOut = () => firebase.auth().signOut();
-  if (authState === 'configNeeded') return /*#__PURE__*/React.createElement(ConfigNeededScreen, null);
-  if (authState === 'loading') {
-    return /*#__PURE__*/React.createElement("div", {
-      style: authStyles.loadingWrap
-    }, /*#__PURE__*/React.createElement("div", {
-      style: authStyles.loadingText
-    }, "loading…"));
-  }
-  if (authState === 'signedOut') {
-    return /*#__PURE__*/React.createElement(LoginScreen, {
-      onSignIn: handleSignIn,
-      error: error,
-      loading: signingIn
-    });
-  }
-  return /*#__PURE__*/React.createElement(PrepTracker, {
-    user: user,
-    onSignOut: handleSignOut
-  });
-}
-const authStyles = {
-  wrap: {
-    minHeight: '100vh',
-    background: '#0B0E14',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-    fontFamily: "'Inter', sans-serif"
-  },
-  loadingWrap: {
-    minHeight: '100vh',
-    background: '#0B0E14',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  loadingText: {
-    color: '#8A93A6',
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 13
-  },
-  card: {
-    background: '#10141C',
-    border: '1px solid #1C212B',
-    borderRadius: 14,
-    padding: 28,
-    maxWidth: 340,
-    width: '100%',
-    textAlign: 'center'
-  },
-  eyebrow: {
-    fontFamily: "'JetBrains Mono', monospace",
-    fontSize: 11,
-    letterSpacing: '0.08em',
-    color: '#6B7280',
-    marginBottom: 10
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 700,
-    color: '#E6E9EF',
-    marginBottom: 10
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#8A93A6',
-    lineHeight: 1.5,
-    marginBottom: 22
-  },
-  error: {
-    fontSize: 12,
-    color: '#E8617A',
-    background: '#1F1418',
-    border: '1px solid #3A2229',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 16,
-    lineHeight: 1.4
-  },
-  googleBtn: {
-    width: '100%',
-    background: '#E8A33D',
-    color: '#0B0E14',
-    border: 'none',
-    borderRadius: 8,
-    padding: '12px 16px',
-    fontWeight: 700,
-    fontSize: 14,
-    cursor: 'pointer'
-  }
-};
   const root = ReactDOM.createRoot(document.getElementById('root'));
-  root.render(React.createElement(AuthGate));
+  root.render(React.createElement(PrepTracker));
 </script>
 </body>
 </html>

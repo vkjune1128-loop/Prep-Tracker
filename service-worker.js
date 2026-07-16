@@ -1,4 +1,4 @@
-const CACHE_NAME = 'prep-tracker-v9';
+const CACHE_NAME = 'prep-tracker-v8';
 const ASSETS = [
   './manifest.json',
   './icon-192.png',
@@ -31,9 +31,7 @@ self.addEventListener('fetch', (event) => {
   const isAppShellOrCDN =
     event.request.mode === 'navigate' ||
     url.endsWith('index.html') ||
-    url.includes('unpkg.com') ||
-    url.includes('gstatic.com') ||
-    url.includes('googleapis.com');
+    url.includes('unpkg.com');
 
   if (isAppShellOrCDN) {
     event.respondWith(
