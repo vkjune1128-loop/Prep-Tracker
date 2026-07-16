@@ -33,15 +33,16 @@
   // this object. Do not skip setting up security rules though.
   // ============================================================
   const FIREBASE_CONFIG = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID",
-  };
-  const FIREBASE_CONFIGURED = FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY";
-
+  apiKey: "AIzaSyCaEt2o-kkk4cjdy2UpKK1UH9cCWpamnoc",
+  authDomain: "prep-tracker-c10be.firebaseapp.com",
+  projectId: "prep-tracker-c10be",
+  storageBucket: "prep-tracker-c10be.firebasestorage.app",
+  messagingSenderId: "746382899186",
+  appId: "1:746382899186:web:5566f5909fec296b911d6b"
+};
+const FIREBASE_CONFIGURED = FIREBASE_CONFIG.apiKey !== "AIzaSyCaEt2o-kkk4cjdy2UpKK1UH9cCWpamnoc";
+// Import the functions you need from the SDKs you need
+  
   let firestoreDb = null;
   if (FIREBASE_CONFIGURED) {
     firebase.initializeApp(FIREBASE_CONFIG);
