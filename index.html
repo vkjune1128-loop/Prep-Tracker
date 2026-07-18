@@ -86,7 +86,42 @@
     });
   }
 </script>
-<script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+  import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIza" + "SyCaEt2o-kkk4cjdy2UpKK1UH9cCWpamnoc",
+    authDomain: "prep-tracker-c10be.firebaseapp.com",
+    projectId: "prep-tracker-c10be",
+    storageBucket: "prep-tracker-c10be.firebasestorage.app",
+    messagingSenderId: "746382899186",
+    appId: "1:746382899186:web:5566f5909fec296b911d6b"
+  };
+
+  const firebaseApp = initializeApp(firebaseConfig);
+  const auth = getAuth(firebaseApp);
+  const db = getFirestore(firebaseApp);
+
+  const originalSet = window.storage.set;
+  window.__localSet = originalSet; // Exposed for syncing without triggering a re-upload
+
+  window.storage.set = async (key, value) => {
+    const result = await originalSet(key, value);
+    if (auth.currentUser && key === STORAGE_KEY) {
+      try {
+        await setDoc(doc(db, "users", auth.currentUser.uid), {
+          trackerData: value,
+          updatedAt: new Date().toISOString()
+        });
+      } catch (e) {
+        console.error("Cloud sync failed", e);
+      }
+    }
+    return result;
+  };
+
   const { useState, useEffect, useCallback } = React;
 
 const TOPICS = [{
@@ -1765,66 +1800,49 @@ function computeStreakPatch(dailyPlan) {
 function PrepTracker() {
   const [data, setData] = useState(loadDefault());
   const [loaded, setLoaded] = useState(false);
+  const [user, setUser] = useState(null); // Firebase auth state
   const [activeTab, setActiveTab] = useState('daily');
   const [saveState, setSaveState] = useState('idle');
   const [collapsed, setCollapsed] = useState({});
   const [filterPriority, setFilterPriority] = useState('all');
   const [filterText, setFilterText] = useState('');
   const [openInfoTopic, setOpenInfoTopic] = useState(null);
-  const [detailModal, setDetailModal] = useState(null); // entry id or null
+  const [detailModal, setDetailModal] = useState(null);
   const [hideCompleted, setHideCompleted] = useState(false);
+
   const toggleCollapsed = pattern => {
-    setCollapsed(prev => ({
-      ...prev,
-      [pattern]: !prev[pattern]
-    }));
+    setCollapsed(prev => ({ ...prev, [pattern]: !prev[pattern] }));
   };
+
+  const loadDataFromString = (jsonString) => {
+    try {
+      const saved = JSON.parse(jsonString);
+      const def = loadDefault();
+      const { todaysQuestions, ...restDailyPlan } = saved.dailyPlan || {};
+      let notesList = saved.notesList || def.notesList;
+      if (!saved.notesList && saved.notes && saved.notes.trim()) {
+        notesList = [{ id: Date.now(), text: saved.notes, createdAt: new Date().toISOString() }];
+      }
+      setData({
+        checklist: { ...def.checklist, ...saved.checklist },
+        dsa: saved.dsa || def.dsa,
+        srs: { ...def.srs, ...(saved.srs || {}) },
+        problemNotes: { ...def.problemNotes, ...(saved.problemNotes || {}) },
+        dailyPlan: { ...def.dailyPlan, ...restDailyPlan },
+        notesList,
+        activityLog: { ...def.activityLog, ...(saved.activityLog || {}) }
+      });
+    } catch(e) {
+      console.error(e);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       try {
         const res = await window.storage.get(STORAGE_KEY);
         if (res && res.value) {
-          const saved = JSON.parse(res.value);
-          const def = loadDefault();
-          const {
-            todaysQuestions,
-            ...restDailyPlan
-          } = saved.dailyPlan || {};
-          // Migrate the old single free-text "notes" field (if present)
-          // into the new multi-entry notesList, so nobody loses what
-          // they'd already written.
-          let notesList = saved.notesList || def.notesList;
-          if (!saved.notesList && saved.notes && saved.notes.trim()) {
-            notesList = [{
-              id: Date.now(),
-              text: saved.notes,
-              createdAt: new Date().toISOString()
-            }];
-          }
-          setData({
-            checklist: {
-              ...def.checklist,
-              ...saved.checklist
-            },
-            dsa: saved.dsa || def.dsa,
-            srs: {
-              ...def.srs,
-              ...(saved.srs || {})
-            },
-            problemNotes: {
-              ...def.problemNotes,
-              ...(saved.problemNotes || {})
-            },
-            dailyPlan: {
-              ...def.dailyPlan,
-              ...restDailyPlan
-            },
-            notesList,
-            activityLog: {
-              ...def.activityLog,
-              ...(saved.activityLog || {})
-            }
-          });
+          loadDataFromString(res.value);
         }
       } catch (e) {
         // no existing data
@@ -1833,6 +1851,46 @@ function PrepTracker() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    let unsubSnapshot;
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (unsubSnapshot) unsubSnapshot();
+      if (currentUser) {
+        setSaveState('saving');
+        const docRef = doc(db, "users", currentUser.uid);
+        unsubSnapshot = onSnapshot(docRef, (docSnap) => {
+          if (docSnap.exists() && docSnap.data().trackerData) {
+            const cloudStr = docSnap.data().trackerData;
+            window.storage.get(STORAGE_KEY).then(localRes => {
+              if (!localRes || localRes.value !== cloudStr) {
+                window.__localSet(STORAGE_KEY, cloudStr);
+                loadDataFromString(cloudStr);
+              }
+            });
+          }
+          setSaveState('idle');
+        }, (err) => {
+          console.error(err);
+          setSaveState('error');
+        });
+      }
+    });
+    return () => {
+      unsubscribeAuth();
+      if (unsubSnapshot) unsubSnapshot();
+    };
+  }, []);
+
+  const handleLogin = () => {
+    const provider = new GoogleAuthProvider();
+    signInWithPopup(auth, provider).catch(console.error);
+  };
+  const handleLogout = () => {
+    signOut(auth);
+  };
+
 
   // Freeze today's selection (new + due reviews) once per plan day, so the
   // checklist doesn't reshuffle mid-session as items get checked off --
@@ -2237,9 +2295,17 @@ function PrepTracker() {
   }, saveState === 'saving' && 'saving…', saveState === 'saved' && 'saved ✓', saveState === 'error' && 'save failed'), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 8
+      gap: 8,
+      alignItems: 'center'
     }
-  }, /*#__PURE__*/React.createElement("button", {
+  }, user ? /*#__PURE__*/React.createElement("button", {
+    style: { ...styles.backupBtn, background: '#45C4B0', color: '#0B0E14' },
+    onClick: handleLogout,
+    title: `Logged in as ${user.email}`
+  }, "👤 Logout") : /*#__PURE__*/React.createElement("button", {
+    style: { ...styles.backupBtn, borderColor: '#45C4B0', color: '#45C4B0' },
+    onClick: handleLogin
+  }, "☁️ Cloud Sync"), /*#__PURE__*/React.createElement("button", {
     style: styles.backupBtn,
     onClick: exportBackup,
     title: "Download a backup file"
